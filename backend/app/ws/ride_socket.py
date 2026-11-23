@@ -22,6 +22,8 @@ from app.schemas.ws_messages import (
     client_message_adapter,
 )
 from app.services import ride_service as rs
+from app.services.distance_service import tracker
+from app.services.positions import evaluate_alerts
 from app.ws.connection_manager import manager
 
 log = logging.getLogger(__name__)
@@ -62,6 +64,9 @@ async def on_location(ride_id: str, rider_id: str, msg: LocationUpdate) -> None:
         rider.is_online = True
         await db.commit()
     await manager.broadcast_positions(ride_id)
+    # Alerts go to the whole room per the protocol; the app shows them to the leader.
+    for alert in await evaluate_alerts(ride_id):
+        await manager.broadcast(ride_id, alert)
 
 
 async def on_heartbeat(rider_id: str) -> None:
@@ -81,6 +86,7 @@ async def on_leave(ride_id: str, rider_id: str) -> bool:
             return False
         await db.execute(delete(Rider).where(Rider.id == rider.id))
         await db.commit()
+    tracker.forget_rider(ride_id, rider_id)
     await manager.broadcast(ride_id, {"type": "rider_left", "rider_id": rider_id})
     return True
 
@@ -120,5 +126,6 @@ async def ride_socket(ws: WebSocket, ride_id: str, rider_id: str = "") -> None:
 async def end_ride_rooms(ride_ids: list[str]) -> None:
     """Notify and close rooms for rides that ended (leader or expiry)."""
     for rid in ride_ids:
+        tracker.reset(rid)
         await manager.broadcast(rid, {"type": "ride_ended"})
         await manager.close_room(rid, CLOSE_RIDE_ENDED)

@@ -104,6 +104,17 @@ class ConvoyController extends Notifier<ConvoyState> {
     }
   }
 
+  /// Leader-only. The room (including us) gets threshold_updated.
+  Future<void> setThreshold(int meters) async {
+    final session = ref.read(rideSessionProvider);
+    if (session == null || !session.isLeader) return;
+    final applied =
+        await ref.read(apiClientProvider).setThreshold(session.rideId, session.riderId, meters);
+    state = state.copyWith(thresholdM: applied, alerts: const {});
+  }
+
+  void dismissAlerts() => state = state.copyWith(alerts: const {});
+
   /// Member leaves for good (server removes them and broadcasts rider_left).
   void sendLeave() => _ws?.send({'type': 'leave'});
 

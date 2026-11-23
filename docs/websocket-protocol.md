@@ -13,7 +13,8 @@ Canonical contract: see [RideSync-v0.1-foundation.md](./RideSync-v0.1-foundation
 ## Server → Client (broadcast)
 
 - `rider_positions` — full rider list with lat/lng/status
-- `distance_alert` — rider beyond threshold
+- `distance_alert` — member crossed the threshold (distance to leader); once per under→over transition, paused while the leader is weak/offline
+- `threshold_updated` — `{type, threshold_m}` after PATCH /threshold
 - `rider_joined` / `rider_left`
 - `ride_ended`
 

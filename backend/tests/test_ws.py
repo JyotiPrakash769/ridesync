@@ -180,3 +180,48 @@ def test_socket_refusals(tc, case):
     with tc.websocket_connect(url) as ws, pytest.raises(WebSocketDisconnect) as exc:
         ws.receive_json()
     assert exc.value.code == code
+
+
+# ---------- Phase 3: alerts + threshold broadcast ----------
+
+DEG_PER_M = 1 / 111_194.93
+
+
+def test_distance_alert_on_transition_only(tc):
+    ride_id, a_id, b_id = _ride(tc)
+    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+        _recv_type(a, "rider_positions")
+        with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={b_id}") as b:
+            _recv_type(b, "rider_positions")
+            _recv_type(a, "rider_positions")
+            a.send_json({"type": "location_update", "lat": 20.0, "lng": 85.0})
+            _recv_type(a, "rider_positions")
+            b.send_json({"type": "location_update", "lat": 20.0 - 200 * DEG_PER_M, "lng": 85.0})
+            _recv_type(a, "rider_positions")
+            # B falls 600 m behind (default threshold 500)
+            b.send_json({"type": "location_update", "lat": 20.0 - 600 * DEG_PER_M, "lng": 85.0})
+            alert = _recv_type(a, "distance_alert")
+            assert alert == {"type": "distance_alert", "rider_id": b_id, "name": "Ravi",
+                             "distance_m": 600}
+            # Still behind: next update produces positions but no new alert.
+            b.send_json({"type": "location_update", "lat": 20.0 - 700 * DEG_PER_M, "lng": 85.0})
+            _recv_type(a, "rider_positions")
+            a.send_json({"type": "heartbeat"})
+            a.send_json({"type": "location_update", "lat": 20.0, "lng": 85.0})
+            msg = a.receive_json()
+            seen = [msg["type"]]
+            while not (msg["type"] == "rider_positions"
+                       and _by_id(msg, a_id)["lat"] == 20.0 and len(seen) > 1):
+                msg = a.receive_json()
+                seen.append(msg["type"])
+            assert "distance_alert" not in seen
+
+
+def test_threshold_patch_broadcasts_to_room(tc):
+    ride_id, a_id, b_id = _ride(tc)
+    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={b_id}") as b:
+        _recv_type(b, "rider_positions")
+        r = tc.patch(f"/rides/{ride_id}/threshold", json={"rider_id": a_id, "threshold_m": 1000})
+        assert r.status_code == 200
+        assert _recv_type(b, "threshold_updated") == {"type": "threshold_updated",
+                                                      "threshold_m": 1000}

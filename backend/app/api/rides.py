@@ -16,6 +16,8 @@ from app.schemas.ride import (
 )
 from app.schemas.rider import RiderOut
 from app.services import ride_service as rs
+from app.services.distance_service import tracker
+from app.ws.connection_manager import manager
 from app.ws.ride_socket import end_ride_rooms
 
 router = APIRouter(prefix="/rides", tags=["rides"])
@@ -63,6 +65,8 @@ async def set_threshold(
     ride_id: str, body: ThresholdIn, db: AsyncSession = Depends(get_db)
 ) -> ThresholdOut:
     ride = await rs.set_threshold(db, ride_id, body.rider_id, body.threshold_m)
+    tracker.reset(ride.id)  # re-evaluate everyone against the new threshold
+    await manager.broadcast(ride.id, {"type": "threshold_updated", "threshold_m": ride.threshold_m})
     return ThresholdOut(threshold_m=ride.threshold_m)
 
 

@@ -16,6 +16,8 @@ import '../../shared/widgets/floating_bar.dart';
 import '../../state/convoy_provider.dart';
 import '../../state/convoy_state.dart';
 import '../../state/ride_session_provider.dart';
+import '../alerts/distance_alert_banner.dart';
+import '../alerts/threshold_selector.dart';
 import '../rider_status/rider_status_sheet.dart';
 import 'map_controller.dart';
 import 'rider_marker.dart';
@@ -87,6 +89,22 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
   void _recenter(Iterable<Rider> riders) {
     final update = ConvoyCamera.fitGroup(riders);
     if (update != null) unawaited(_map?.animateCamera(update));
+  }
+
+  void _showRider(String riderId) {
+    final r = ref.read(convoyProvider).riders[riderId];
+    final u = r == null ? null : ConvoyCamera.focus(r);
+    if (u != null) unawaited(_map?.animateCamera(u));
+  }
+
+  Future<void> _setThreshold(int m) async {
+    try {
+      await ref.read(convoyProvider.notifier).setThreshold(m);
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+      }
+    }
   }
 
   void _toggleStatus() {
@@ -188,10 +206,7 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                   riders: convoy.riders.values.toList(),
                   scrollController: scroll,
                   selfId: session.riderId,
-                  onRiderTap: (r) {
-                    final u = ConvoyCamera.focus(r);
-                    if (u != null) unawaited(_map?.animateCamera(u));
-                  },
+                  onRiderTap: (r) => _showRider(r.id),
                   footer: Padding(
                     padding: EdgeInsets.only(bottom: AppTokens.minTouch + barBottom),
                     child: OutlinedButton.icon(
@@ -203,6 +218,17 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                 ),
               ),
             ),
+          if (session.isLeader)
+            Positioned(
+              left: AppTokens.sideMargin,
+              right: AppTokens.sideMargin,
+              bottom: barBottom + AppTokens.minTouch + 8 + AppTokens.gap,
+              child: DistanceAlertBanner(
+                alerts: convoy.alerts,
+                onShowWorst: _showRider,
+                onDismiss: () => ref.read(convoyProvider.notifier).dismissAlerts(),
+              ),
+            ),
           Positioned(
             left: AppTokens.sideMargin,
             right: AppTokens.sideMargin,
@@ -212,6 +238,9 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
               statusOpen: _statusOpen,
               onToggleStatus: _toggleStatus,
               onRecenter: () => _recenter(convoy.riders.values),
+              thresholdChip: session.isLeader
+                  ? ThresholdChip(thresholdM: convoy.thresholdM, onChanged: _setThreshold)
+                  : null,
             ),
           ),
         ],

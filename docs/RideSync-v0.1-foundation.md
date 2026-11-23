@@ -208,6 +208,16 @@ ends the ride via `POST /rides/{id}/end` instead.
 {"type": "distance_alert", "rider_id": "...", "name": "Pranit", "distance_m": 510}
 ```
 ```json
+{"type": "threshold_updated", "threshold_m": 300}
+```
+`threshold_updated` (v0.1 addition) is broadcast after a successful `PATCH /threshold`.
+
+`distance_alert` semantics: haversine distance from each member to the **leader's** last
+position; fires only on the under→over transition per rider (re-arms below 90% of the
+threshold). While the leader is weak/offline alerts are paused; when the leader is back online
+anyone still over fires once. A threshold change re-evaluates everyone. Broadcast to the room;
+the app shows it to the leader only.
+```json
 {"type": "rider_joined", "rider_id": "...", "name": "Pranit", "role": "member"}
 ```
 ```json

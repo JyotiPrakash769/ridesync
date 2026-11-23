@@ -31,3 +31,26 @@ async def positions_message(ride_id: str) -> dict[str, Any] | None:
         now = rs.utcnow()
         riders = await rs.list_riders(db, ride_id)
         return {"type": "rider_positions", "riders": [rider_payload(r, now) for r in riders]}
+
+
+async def evaluate_alerts(ride_id: str) -> list[dict[str, Any]]:
+    """Run the distance tracker for a ride; returns distance_alert messages."""
+    from app.models.rider import ROLE_LEADER
+    from app.services.distance_service import Point, tracker
+
+    async with AsyncSessionLocal() as db:
+        ride = await db.get(rs.Ride, ride_id)
+        if ride is None or not rs.is_ride_live(ride):
+            tracker.reset(ride_id)
+            return []
+        now = rs.utcnow()
+        riders = await rs.list_riders(db, ride_id)
+        points = [
+            Point(str(r.id), r.display_name, r.last_lat, r.last_lng,
+                  rs.derive_status(r.last_seen_at, now))
+            for r in riders
+        ]
+        leader = next(
+            (p for p, r in zip(points, riders, strict=True) if r.role == ROLE_LEADER), None
+        )
+        return [a.message() for a in tracker.evaluate(ride_id, leader, points, ride.threshold_m)]
