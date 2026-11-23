@@ -73,8 +73,8 @@ flutter test
 
 ### Map provider
 
-The map uses **OpenStreetMap** data by default (`flutter_map`; CARTO dark basemap in dark
-mode, OSM standard tiles in light mode) and needs no API key. Google Maps is still built in:
+The map uses **OpenStreetMap** data by default (`flutter_map`; in dark
+mode the OSM tiles are darkened on the device) and needs no API key. Google Maps is still built in:
 build with `--dart-define=MAP_PROVIDER=google` (CI: set the repo variable `MAP_PROVIDER=google`)
 plus a Maps key as below.
 

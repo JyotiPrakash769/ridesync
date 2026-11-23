@@ -7,8 +7,9 @@ import 'convoy_map_view.dart';
 import 'map_geometry.dart';
 import 'rider_marker_widget.dart';
 
-/// OpenStreetMap-data map (no API key). Dark theme uses CARTO's dark basemap,
-/// light theme the standard OSM tiles. Attribution is required by both.
+/// OpenStreetMap map (no API key): standard OSM tiles, darkened on the
+/// device in dark mode (flutter_map's darkModeTileBuilder). CARTO's dark
+/// basemap now requires an API key, so it is not used.
 ///
 /// Markers glide to each new position over [glide] instead of jumping every
 /// ~4 s, trails are drawn under them, and the leader's regroup pin on top.
@@ -26,9 +27,7 @@ class OsmConvoyMap extends StatefulWidget {
   final EdgeInsets padding;
   final void Function(double lat, double lng)? onLongPress;
 
-  static const String darkTiles =
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  static const String lightTiles = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  static const String tiles = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   static const Duration glide = Duration(milliseconds: 900);
 
   @override
@@ -138,10 +137,9 @@ class _OsmConvoyMapState extends State<OsmConvoyMap>
       ),
       children: [
         TileLayer(
-          urlTemplate: dark ? OsmConvoyMap.darkTiles : OsmConvoyMap.lightTiles,
-          subdomains: const ['a', 'b', 'c', 'd'],
+          urlTemplate: OsmConvoyMap.tiles,
           userAgentPackageName: 'app.ridesync.ridesync',
-          retinaMode: dark && RetinaMode.isHighDensity(context),
+          tileBuilder: dark ? darkModeTileBuilder : null,
           maxZoom: 19,
         ),
         PolylineLayer(
@@ -200,7 +198,7 @@ class _OsmConvoyMapState extends State<OsmConvoyMap>
             alignment: Alignment.topLeft,
             backgroundColor: scheme.surface.withValues(alpha: 0.7),
             source: Text(
-              dark ? 'OpenStreetMap contributors · CARTO' : 'OpenStreetMap contributors',
+              'OpenStreetMap contributors',
               style: Theme.of(context).textTheme.labelSmall,
             ),
           ),
