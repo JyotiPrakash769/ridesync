@@ -9,6 +9,20 @@ GPS points recorded while offline are synced on reconnect.
 Monorepo: `mobile/` (Flutter), `backend/` (FastAPI), `docs/` (contracts & design),
 `docker-compose.yml` (local Postgres).
 
+### Features (v0.2)
+
+- **Rides:** create (QR + code + share), join (scan / code / link), session restore, leave / end.
+- **Live map:** OpenStreetMap (Google Maps switchable), gliding bike markers with heading arrow,
+  "You" marker, leader ring + star, 5-minute trails, recenter, rider list with status,
+  distance behind leader, speed, last seen.
+- **Alerts:** leader-only falling-behind alerts (100/300/500/1000 m) with spoken + vibration
+  alerts; regroup point (long-press map or "Regroup at my location"); leader handoff and
+  takeover after the leader has been offline 4+ minutes; ride summary at the end.
+- **On the road:** foreground-service tracking with the screen off, battery-saver exemption,
+  auto-reconnect, offline cache + sync, handlebar (sunlight) mode, dark/light/phone theme.
+- **Security & privacy:** per-rider secret tokens on every call, rate limits, ride data only
+  visible to that ride's riders, data deleted 7 days after a ride ends, privacy page.
+
 ## Prerequisites
 
 | Tool | Version used | Notes |
@@ -137,6 +151,11 @@ adb shell am start -a android.intent.action.VIEW -d "ridesync://join/K7Q2MX"
 | `DATABASE_URL` | backend `.env` | Async Postgres URL (`postgresql+asyncpg://...`) |
 | `RIDE_TTL_HOURS` | backend `.env` | Ride lifetime from creation (default 12) |
 | `CORS_ORIGINS` | backend `.env` | Comma-separated origins (default `*`) |
+| `RETENTION_DAYS` | backend `.env` | Delete ended rides after N days (default 7) |
+| `PUBLIC_BASE_URL` | backend `.env` | This backend's public URL; QR links become `<url>/join/CODE` |
+| `APP_DOWNLOAD_URL` | backend `.env` | Where the join page sends people without the app |
+| `ANDROID_CERT_SHA256` | backend `.env` | Signing-cert SHA-256(s); enables `/.well-known/assetlinks.json` |
+| `SENTRY_DSN` | backend `.env` / CI secret | Optional crash reporting (off when empty) |
 | `TEST_DATABASE_URL` | backend tests | Optional override (default: compose `ridesync_test`) |
 | `API_BASE_URL` | mobile `--dart-define` | REST base URL |
 | `WS_BASE_URL` | mobile `--dart-define` | WebSocket base URL |
@@ -150,8 +169,9 @@ adb shell am start -a android.intent.action.VIEW -d "ridesync://join/K7Q2MX"
    ```
    web: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
    ```
-3. Variables: `DATABASE_URL` = the Postgres URL **with the driver changed to
-   `postgresql+asyncpg://`**, `RIDE_TTL_HOURS=12`, `CORS_ORIGINS=*`.
+3. Variables: `DATABASE_URL=${{Postgres.DATABASE_URL}}` (the app adds the asyncpg driver
+   itself), `RIDE_TTL_HOURS=12`, `RETENTION_DAYS=7`, `PUBLIC_BASE_URL=https://<your service>`,
+   `CORS_ORIGINS=` (empty). `backend/railway.json` sets the `/health` healthcheck.
 4. Keep the service at **one instance**: WebSocket rooms and alert state are in memory.
 5. Build the APK with the Railway `https://` / `wss://` URLs (above).
 
@@ -159,9 +179,17 @@ Expired rides are ended by an in-process loop every 5 minutes
 (`app/tasks/expiry_cleanup.py`); requests never depend on it because every route checks
 `expires_at` directly.
 
-## Known limitations (v0.1)
+## Release signing (once)
 
-- No accounts: whoever has the ride code can join; `rider_id` in requests is the only identity.
+`powershell -ExecutionPolicy Bypass -File scripts\setup-release-signing.ps1` creates a keystore in
+`%USERPROFILE%\.ridesync-signing` and uploads it as GitHub secrets, so every CI release installs
+over the previous one. Back the keystore up. Set the backend's `ANDROID_CERT_SHA256` to its
+SHA-256 so join links open the app directly.
+
+## Known limitations
+
+- No accounts: anyone with the ride code can join (that's the design); everything after joining
+  needs the rider's secret token.
 - Single backend instance only (in-memory WebSocket rooms + alert state; Redis pub/sub needed
   to scale).
 - Distance alerts measure straight-line distance to the leader, not along the road; paused while
