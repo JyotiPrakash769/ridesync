@@ -17,6 +17,11 @@ class Env {
     defaultValue: 'ws://10.0.2.2:8000',
   );
 
+  /// Map provider: 'osm' (default, OpenStreetMap data, no API key) or
+  /// 'google' (needs MAPS_API_KEY). Build with
+  ///   --dart-define=MAP_PROVIDER=google
+  static const String mapProvider = String.fromEnvironment('MAP_PROVIDER', defaultValue: 'osm');
+
   /// Deep-link hosts/schemes used in QR payloads.
   static const String joinLinkHost = 'ridesync.app';
   static const String joinLinkScheme = 'ridesync';

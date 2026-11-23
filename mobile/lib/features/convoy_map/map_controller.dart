@@ -4,7 +4,7 @@ import '../../models/rider.dart';
 
 /// Camera helpers for the convoy map.
 abstract final class ConvoyCamera {
-  static const LatLng fallbackCenter = LatLng(20.2961, 85.8245);
+  static const LatLng fallbackCenter = LatLng(20.2961, 85.8245); // = MapGeometry fallback
 
   /// Fits every rider with a known position; a single rider gets a street zoom.
   static CameraUpdate? fitGroup(Iterable<Rider> riders) {

@@ -1,8 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/location/background_task.dart';
@@ -20,8 +18,7 @@ import '../../state/ride_session_provider.dart';
 import '../alerts/distance_alert_banner.dart';
 import '../alerts/threshold_selector.dart';
 import '../rider_status/rider_status_sheet.dart';
-import 'map_controller.dart';
-import 'rider_marker.dart';
+import 'convoy_map_view.dart';
 import 'tracking_permission_flow.dart';
 
 /// The map IS the screen: full-bleed, no app bar, floating chrome only.
@@ -33,10 +30,7 @@ class ConvoyMapScreen extends ConsumerStatefulWidget {
 }
 
 class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
-  GoogleMapController? _map;
-  String? _mapStyle;
-  RiderMarkerFactory? _markerFactory;
-  Set<Marker> _markers = {};
+  ConvoyMapHandle? _map;
   bool _statusOpen = false;
   bool _fittedOnce = false;
   bool _busy = false;
@@ -46,9 +40,6 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
   @override
   void initState() {
     super.initState();
-    rootBundle.loadString('assets/map_style_dark.json').then((s) {
-      if (mounted) setState(() => _mapStyle = s);
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _startTracking());
   }
 
@@ -63,48 +54,20 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
     }
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final scheme = Theme.of(context).colorScheme;
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    if (_markerFactory?.scheme != scheme || _markerFactory?.devicePixelRatio != dpr) {
-      _markerFactory = RiderMarkerFactory(scheme, dpr);
-    }
-  }
+  void _recenter(Iterable<Rider> riders) => _map?.fitGroup(riders);
 
-  Future<void> _rebuildMarkers(ConvoyState s) async {
-    final factory = _markerFactory;
-    if (factory == null) return;
-    final next = <Marker>{};
-    for (final r in s.riders.values) {
-      if (!r.hasPosition) continue;
-      next.add(Marker(
-        markerId: MarkerId(r.id),
-        position: LatLng(r.lat!, r.lng!),
-        icon: await factory.build(name: r.name, leader: r.isLeader),
-        anchor: RiderMarkerFactory.anchorFor(),
-        alpha: r.status == RiderStatus.offline ? 0.5 : 1,
-        zIndexInt: r.isLeader ? 2 : 1,
-        infoWindow: InfoWindow(title: r.name),
-      ));
-    }
-    if (mounted) setState(() => _markers = next);
-    if (!_fittedOnce && next.isNotEmpty) {
+  /// Frames the whole group once, the first time anyone has a position.
+  void _maybeFirstFit(ConvoyState s) {
+    if (_fittedOnce || _map == null) return;
+    if (s.riders.values.any((r) => r.hasPosition)) {
       _fittedOnce = true;
       _recenter(s.riders.values);
     }
   }
 
-  void _recenter(Iterable<Rider> riders) {
-    final update = ConvoyCamera.fitGroup(riders);
-    if (update != null) unawaited(_map?.animateCamera(update));
-  }
-
   void _showRider(String riderId) {
     final r = ref.read(convoyProvider).riders[riderId];
-    final u = r == null ? null : ConvoyCamera.focus(r);
-    if (u != null) unawaited(_map?.animateCamera(u));
+    if (r != null) _map?.focus(r);
   }
 
   Future<void> _setThreshold(int m) async {
@@ -148,7 +111,7 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
     final session = ref.watch(rideSessionProvider);
     final convoy = ref.watch(convoyProvider);
     ref.listen(convoyProvider, (prev, next) {
-      if (!identical(prev?.riders, next.riders)) unawaited(_rebuildMarkers(next));
+      if (!identical(prev?.riders, next.riders)) _maybeFirstFit(next);
     });
     if (session == null) return const SizedBox.shrink();
     if (convoy.ended || convoy.fatalCloseCode != null) {
@@ -163,21 +126,17 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: GoogleMap(
-              initialCameraPosition:
-                  const CameraPosition(target: ConvoyCamera.fallbackCenter, zoom: 13),
-              style: Theme.of(context).brightness == Brightness.dark ? _mapStyle : null,
-              markers: _markers,
-              myLocationEnabled: _access == LocationAccess.always ||
-                  _access == LocationAccess.foregroundOnly,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              compassEnabled: false,
-              padding: EdgeInsets.only(bottom: AppTokens.minTouch + barBottom + 8, top: padding.top),
-              onMapCreated: (c) {
-                _map = c;
-                _recenter(convoy.riders.values);
+            child: ConvoyMapView(
+              riders: convoy.riders.values.toList(),
+              showMyLocation:
+                  _access == LocationAccess.always || _access == LocationAccess.foregroundOnly,
+              padding: EdgeInsets.only(
+                top: padding.top + 56,
+                bottom: AppTokens.minTouch + barBottom + 8,
+              ),
+              onReady: (handle) {
+                _map = handle;
+                _maybeFirstFit(ref.read(convoyProvider));
               },
             ),
           ),

@@ -57,7 +57,17 @@ flutter analyze
 flutter test
 ```
 
-### Google Maps API key
+### Map provider
+
+The map uses **OpenStreetMap** data by default (`flutter_map`; CARTO dark basemap in dark
+mode, OSM standard tiles in light mode) and needs no API key. Google Maps is still built in:
+build with `--dart-define=MAP_PROVIDER=google` (CI: set the repo variable `MAP_PROVIDER=google`)
+plus a Maps key as below.
+
+> OSM tile servers are community-funded and meant for light use; before many riders use the
+> app, switch to Google Maps or a commercial OSM tile provider.
+
+### Google Maps API key (only for MAP_PROVIDER=google)
 
 1. In Google Cloud Console enable **Maps SDK for Android** and create an API key (restrict it to
    the Android app `app.ridesync.ridesync` + your signing SHA-1).
