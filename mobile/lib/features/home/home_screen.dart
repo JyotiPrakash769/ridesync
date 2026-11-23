@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/config/env.dart';
 
 import '../../shared/widgets/centered_form.dart';
+import '../settings/settings_sheet.dart';
 import '../ride_create/create_ride_screen.dart';
 import '../ride_join/join_ride_screen.dart';
 
@@ -15,6 +16,11 @@ class HomeScreen extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
     return CenteredForm(
+      trailing: IconButton(
+        tooltip: 'Settings',
+        icon: const Icon(Icons.settings),
+        onPressed: () => showSettingsSheet(context),
+      ),
       children: [
         Icon(Icons.two_wheeler, size: 64, color: scheme.primary),
         const SizedBox(height: 16),

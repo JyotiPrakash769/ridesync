@@ -18,6 +18,7 @@ import '../../state/ride_session_provider.dart';
 import '../alerts/distance_alert_banner.dart';
 import '../alerts/threshold_selector.dart';
 import '../rider_status/rider_status_sheet.dart';
+import '../settings/settings_sheet.dart';
 import 'convoy_map_view.dart';
 import 'tracking_permission_flow.dart';
 
@@ -129,7 +130,12 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
         children: [
           Positioned.fill(
             child: ConvoyMapView(
-              riders: convoy.riders.values.toList(),
+              data: ConvoyMapData(
+                riders: convoy.riders.values.toList(),
+                trails: convoy.trails,
+                selfId: session.riderId,
+                headingOf: convoy.headingOf,
+              ),
               showMyLocation:
                   _access == LocationAccess.always || _access == LocationAccess.foregroundOnly,
               padding: EdgeInsets.only(
@@ -180,10 +186,21 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                   onRiderTap: (r) => _showRider(r.id),
                   footer: Padding(
                     padding: EdgeInsets.only(bottom: AppTokens.minTouch + barBottom),
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _confirmEnd(session.isLeader),
-                      icon: Icon(session.isLeader ? Icons.flag : Icons.logout),
-                      label: Text(session.isLeader ? 'End ride for everyone' : 'Leave ride'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => showSettingsSheet(context),
+                          icon: const Icon(Icons.settings),
+                          label: const Text('Settings'),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : () => _confirmEnd(session.isLeader),
+                          icon: Icon(session.isLeader ? Icons.flag : Icons.logout),
+                          label: Text(session.isLeader ? 'End ride for everyone' : 'Leave ride'),
+                        ),
+                      ],
                     ),
                   ),
                 ),

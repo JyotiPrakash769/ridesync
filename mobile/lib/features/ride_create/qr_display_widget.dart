@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// QR (deep-link payload) + the ride ID as selectable text with a copy button.
 class QrDisplayWidget extends StatelessWidget {
@@ -52,6 +53,15 @@ class QrDisplayWidget extends StatelessWidget {
               },
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.share),
+          label: const Text('Share invite'),
+          onPressed: () => SharePlus.instance.share(ShareParams(
+            subject: 'Join my RideSync ride',
+            text: 'Join my ride on RideSync! Code: $rideId\n$payload',
+          )),
         ),
       ],
     );

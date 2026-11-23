@@ -35,6 +35,7 @@ class RiderStatusSheet extends ConsumerWidget {
     final now = ref.watch(clockProvider).value ?? DateTime.now().toUtc();
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final leader = riders.where((r) => r.isLeader).firstOrNull;
     final sorted = [...riders]
       ..sort((a, b) => _order(a) != _order(b)
           ? _order(a) - _order(b)
@@ -79,7 +80,9 @@ class RiderStatusSheet extends ConsumerWidget {
               ],
             ),
             subtitle: Text(
-              lastUpdateLabel(r, now),
+              [leaderGapLabel(r, leader), speedLabel(r), lastUpdateLabel(r, now)]
+                  .whereType<String>()
+                  .join(' · '),
               style: text.bodySmall?.copyWith(fontFeatures: tabularFigures),
             ),
             trailing: StatusDot(status: r.status),

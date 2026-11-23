@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:hive/hive.dart';
 import 'package:ridesync/core/network/api_client.dart';
 import 'package:ridesync/core/storage/local_db.dart';
+import 'package:ridesync/state/settings.dart';
 
 /// Opens a Hive box in a throwaway temp dir.
 Future<Box<dynamic>> openTempBox(String name) async {
@@ -17,6 +18,12 @@ int _boxSeq = 0;
 /// Each call gets its own box: Hive returns an already-open box by name.
 Future<SessionStore> tempSessionStore() async =>
     SessionStore(await openTempBox('${LocalDb.sessionBox}_${_boxSeq++}'));
+
+Future<SettingsStore> tempSettingsStore({AppSettings? initial}) async {
+  final store = SettingsStore(await openTempBox('${LocalDb.settingsBox}_${_boxSeq++}'));
+  if (initial != null) await store.save(initial);
+  return store;
+}
 
 /// ApiClient whose join/create results are scripted.
 class FakeApi extends ApiClient {

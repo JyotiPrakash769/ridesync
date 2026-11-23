@@ -2,10 +2,13 @@ import 'package:material_ui/material_ui.dart';
 
 /// Centered single-column layout for the Create/Join screens.
 class CenteredForm extends StatelessWidget {
-  const CenteredForm({super.key, required this.children, this.onBack});
+  const CenteredForm({super.key, required this.children, this.onBack, this.trailing});
 
   final List<Widget> children;
   final VoidCallback? onBack;
+
+  /// Optional top-right action (e.g. settings).
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +29,7 @@ class CenteredForm extends StatelessWidget {
                 ),
               ),
             ),
+            if (trailing != null) Positioned(right: 4, top: 4, child: trailing!),
             if (onBack != null)
               Positioned(
                 left: 4,

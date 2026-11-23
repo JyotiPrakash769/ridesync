@@ -25,12 +25,20 @@ abstract final class StatusColors {
 /// Tabular figures so distances, speeds and timers don't jitter.
 const List<FontFeature> tabularFigures = [FontFeature.tabularFigures()];
 
-abstract final class AppTheme {
-  static ThemeData dark() => _build(Brightness.dark);
-  static ThemeData light() => _build(Brightness.light);
+/// Text scale used by handlebar (sunlight) mode.
+const double handlebarTextScale = 1.25;
 
-  static ThemeData _build(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
+abstract final class AppTheme {
+  /// [highContrast] = handlebar / sunlight mode (M3 contrast level 1.0).
+  static ThemeData dark({bool highContrast = false}) => _build(Brightness.dark, highContrast);
+  static ThemeData light({bool highContrast = false}) => _build(Brightness.light, highContrast);
+
+  static ThemeData _build(Brightness brightness, bool highContrast) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: _seed,
+      brightness: brightness,
+      contrastLevel: highContrast ? 1.0 : 0.0,
+    );
     const minSize = Size(AppTokens.minTouch, AppTokens.minTouch);
     return ThemeData(
       useMaterial3: true,

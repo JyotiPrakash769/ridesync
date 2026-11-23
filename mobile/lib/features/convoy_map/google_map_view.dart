@@ -14,16 +14,18 @@ import 'rider_marker.dart';
 class GoogleConvoyMap extends StatefulWidget {
   const GoogleConvoyMap({
     super.key,
-    required this.riders,
+    required this.data,
     required this.onReady,
     required this.padding,
     required this.showMyLocation,
+    this.onLongPress,
   });
 
-  final List<Rider> riders;
+  final ConvoyMapData data;
   final ValueChanged<ConvoyMapHandle> onReady;
   final EdgeInsets padding;
   final bool showMyLocation;
+  final void Function(double lat, double lng)? onLongPress;
 
   @override
   State<GoogleConvoyMap> createState() => _GoogleConvoyMapState();
@@ -57,14 +59,14 @@ class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapH
   @override
   void didUpdateWidget(GoogleConvoyMap old) {
     super.didUpdateWidget(old);
-    if (!identical(old.riders, widget.riders)) unawaited(_rebuild());
+    if (!identical(old.data.riders, widget.data.riders)) unawaited(_rebuild());
   }
 
   Future<void> _rebuild() async {
     final factory = _factory;
     if (factory == null) return;
     final next = <Marker>{};
-    for (final r in widget.riders) {
+    for (final r in widget.data.riders) {
       if (!r.hasPosition) continue;
       next.add(Marker(
         markerId: MarkerId(r.id),
@@ -72,7 +74,7 @@ class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapH
         icon: await factory.build(name: r.name, leader: r.isLeader),
         anchor: RiderMarkerFactory.anchorFor(),
         alpha: r.status == RiderStatus.offline ? 0.5 : 1,
-        zIndexInt: r.isLeader ? 2 : 1,
+        zIndexInt: r.id == widget.data.selfId ? 3 : (r.isLeader ? 2 : 1),
         infoWindow: InfoWindow(title: r.name),
       ));
     }
@@ -93,10 +95,35 @@ class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapH
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final data = widget.data;
+    final regroup = data.regroup;
     return GoogleMap(
+      polylines: {
+        for (final r in data.riders)
+          if ((data.trails[r.id]?.length ?? 0) >= 2)
+            Polyline(
+              polylineId: PolylineId(r.id),
+              points: [for (final p in data.trails[r.id]!) LatLng(p.lat, p.lng)],
+              width: 4,
+              color: (r.isLeader ? scheme.primary : scheme.secondary).withValues(alpha: 0.4),
+            ),
+      },
+      onLongPress: widget.onLongPress == null
+          ? null
+          : (p) => widget.onLongPress!(p.latitude, p.longitude),
       initialCameraPosition: const CameraPosition(target: ConvoyCamera.fallbackCenter, zoom: 13),
       style: Theme.of(context).brightness == Brightness.dark ? _style : null,
-      markers: _markers,
+      markers: {
+        ..._markers,
+        if (regroup != null)
+          Marker(
+            markerId: const MarkerId('regroup'),
+            position: LatLng(regroup.lat, regroup.lng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+            infoWindow: InfoWindow(title: regroup.label),
+          ),
+      },
       myLocationEnabled: widget.showMyLocation,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,

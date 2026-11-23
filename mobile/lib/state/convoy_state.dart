@@ -13,6 +13,45 @@ class DistanceAlert {
   DistanceAlert withDistance(int d) => DistanceAlert(riderId: riderId, name: name, distanceM: d);
 }
 
+/// Leader-set meeting point ("regroup at the fuel station").
+class RegroupPoint {
+  const RegroupPoint({required this.lat, required this.lng, required this.label, this.setAt});
+
+  final double lat;
+  final double lng;
+  final String label;
+  final DateTime? setAt;
+
+  static RegroupPoint? fromJson(Object? j) {
+    if (j is! Map) return null;
+    final lat = j['lat'], lng = j['lng'];
+    if (lat is! num || lng is! num) return null;
+    return RegroupPoint(
+      lat: lat.toDouble(),
+      lng: lng.toDouble(),
+      label: (j['label'] as String?) ?? '',
+      setAt: j['set_at'] is String ? DateTime.tryParse(j['set_at'] as String)?.toUtc() : null,
+    );
+  }
+}
+
+/// One point of a rider's recent path (drawn as a faint trail).
+class TrailPoint {
+  const TrailPoint(this.lat, this.lng, this.at);
+
+  final double lat;
+  final double lng;
+  final DateTime at;
+}
+
+/// Trails keep the last few minutes; tiny GPS jitter isn't recorded.
+const Duration trailWindow = Duration(minutes: 5);
+const double trailMinStepM = 3;
+const int trailMaxPoints = 150;
+
+/// Heading needs at least this much movement to be meaningful.
+const double headingMinStepM = 5;
+
 /// Same re-arm ratio as the backend: an alert clears once the rider is back
 /// under 90% of the threshold.
 const double alertClearRatio = 0.9;
@@ -26,6 +65,7 @@ class ConvoyState {
     this.ended = false,
     this.fatalCloseCode,
     this.alerts = const {},
+    this.trails = const {},
   });
 
   final Map<String, Rider> riders;
@@ -34,6 +74,17 @@ class ConvoyState {
   final bool ended;
   final int? fatalCloseCode;
   final Map<String, DistanceAlert> alerts;
+  final Map<String, List<TrailPoint>> trails;
+
+  /// Direction of travel in degrees (0 = north), from the rider's last two
+  /// trail points; null while they haven't moved enough to tell.
+  double? headingOf(String riderId) {
+    final t = trails[riderId];
+    if (t == null || t.length < 2) return null;
+    final a = t[t.length - 2], b = t.last;
+    if (haversineM(a.lat, a.lng, b.lat, b.lng) < headingMinStepM) return null;
+    return bearingDeg(a.lat, a.lng, b.lat, b.lng);
+  }
 
   /// The alert with the largest current distance (tap target for the card).
   DistanceAlert? get worstAlert => alerts.values.isEmpty
@@ -49,6 +100,7 @@ class ConvoyState {
     bool? ended,
     int? fatalCloseCode,
     Map<String, DistanceAlert>? alerts,
+    Map<String, List<TrailPoint>>? trails,
   }) =>
       ConvoyState(
         riders: riders ?? this.riders,
@@ -57,6 +109,7 @@ class ConvoyState {
         ended: ended ?? this.ended,
         fatalCloseCode: fatalCloseCode ?? this.fatalCloseCode,
         alerts: alerts ?? this.alerts,
+        trails: trails ?? this.trails,
       );
 }
 
@@ -66,7 +119,11 @@ ConvoyState applyMessage(ConvoyState s, Map<String, dynamic> msg) {
     case 'rider_positions':
       final list = (msg['riders'] as List).cast<Map<String, dynamic>>();
       final riders = {for (final j in list) j['rider_id'] as String: Rider.fromJson(j)};
-      return s.copyWith(riders: riders, alerts: _refreshAlerts(s.alerts, riders, s.thresholdM));
+      return s.copyWith(
+        riders: riders,
+        alerts: _refreshAlerts(s.alerts, riders, s.thresholdM),
+        trails: _extendTrails(s.trails, riders),
+      );
     case 'distance_alert':
       final id = msg['rider_id'] as String;
       return s.copyWith(alerts: {
@@ -93,6 +150,7 @@ ConvoyState applyMessage(ConvoyState s, Map<String, dynamic> msg) {
       return s.copyWith(
         riders: Map.of(s.riders)..remove(msg['rider_id']),
         alerts: Map.of(s.alerts)..remove(msg['rider_id']),
+        trails: Map.of(s.trails)..remove(msg['rider_id']),
       );
     case 'ride_ended':
       return s.copyWith(ended: true);
@@ -122,6 +180,31 @@ Map<String, DistanceAlert> _refreshAlerts(
     }
     final d = haversineM(leader.lat!, leader.lng!, r.lat!, r.lng!);
     if (d > thresholdM * alertClearRatio) out[a.riderId] = a.withDistance(d.round());
+  }
+  return out;
+}
+
+Map<String, List<TrailPoint>> _extendTrails(
+  Map<String, List<TrailPoint>> trails,
+  Map<String, Rider> riders,
+) {
+  final out = <String, List<TrailPoint>>{};
+  for (final r in riders.values) {
+    final prev = trails[r.id] ?? const <TrailPoint>[];
+    if (!r.hasPosition) {
+      if (prev.isNotEmpty) out[r.id] = prev;
+      continue;
+    }
+    final at = r.lastSeenAt ?? (prev.isEmpty ? DateTime.now().toUtc() : prev.last.at);
+    var list = prev;
+    final last = prev.isEmpty ? null : prev.last;
+    if (last == null || haversineM(last.lat, last.lng, r.lat!, r.lng!) >= trailMinStepM) {
+      list = [...prev, TrailPoint(r.lat!, r.lng!, at)];
+    }
+    final cutoff = list.last.at.subtract(trailWindow);
+    list = list.where((p) => !p.at.isBefore(cutoff)).toList();
+    if (list.length > trailMaxPoints) list = list.sublist(list.length - trailMaxPoints);
+    out[r.id] = list;
   }
   return out;
 }

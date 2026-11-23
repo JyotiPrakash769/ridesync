@@ -1,3 +1,4 @@
+import 'geo.dart';
 import '../models/rider.dart';
 
 /// "just now", "12s ago", "4m ago", "2h ago".
@@ -22,3 +23,22 @@ String statusLabel(RiderStatus s) => switch (s) {
       RiderStatus.weak => 'Weak signal',
       RiderStatus.offline => 'Offline',
     };
+
+/// "650 m" / "1.2 km".
+String formatDistance(double meters) =>
+    meters < 1000 ? '${meters.round()} m' : '${(meters / 1000).toStringAsFixed(1)} km';
+
+/// Member's straight-line distance to the leader ("650 m behind"), "Leading"
+/// for the leader, null when either position is unknown.
+String? leaderGapLabel(Rider r, Rider? leader) {
+  if (r.isLeader) return 'Leading';
+  if (leader == null || !leader.hasPosition || !r.hasPosition) return null;
+  return '${formatDistance(haversineM(leader.lat!, leader.lng!, r.lat!, r.lng!))} behind';
+}
+
+/// "42 km/h" when moving, null when stopped/unknown.
+String? speedLabel(Rider r) {
+  final v = r.speedKph;
+  if (v == null || v < 1) return null;
+  return '${v.round()} km/h';
+}
