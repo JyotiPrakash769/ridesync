@@ -34,8 +34,10 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        // Google Maps key: set MAPS_API_KEY=... in android/local.properties (not committed).
-        manifestPlaceholders["MAPS_API_KEY"] = localProps.getProperty("MAPS_API_KEY", "")
+        // Google Maps key: MAPS_API_KEY in android/local.properties (not committed),
+        // or the MAPS_API_KEY env var (CI secret).
+        manifestPlaceholders["MAPS_API_KEY"] =
+            localProps.getProperty("MAPS_API_KEY") ?: System.getenv("MAPS_API_KEY") ?: ""
     }
 
     buildTypes {

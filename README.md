@@ -96,6 +96,17 @@ Output: `mobile/build/app/outputs/flutter-apk/app-release.apk`. Copy it to the p
 The release build is currently signed with the **debug key** (see `build.gradle.kts`); create a
 release keystore before distributing beyond testers.
 
+### CI release APK
+
+`.github/workflows/android-release.yml` builds the APK on GitHub Actions and attaches it to a
+GitHub Release whenever a `v*` tag is pushed (or via *Run workflow*). Set repo variables
+`API_BASE_URL` / `WS_BASE_URL` and the secret `MAPS_API_KEY` first, otherwise the build targets
+the emulator host and has no map key.
+
+```powershell
+git tag v0.1.1; git push origin v0.1.1
+```
+
 ### Deep links / QR
 
 The QR encodes `https://ridesync.app/join/{ride_id}`; `ridesync://join/{ride_id}` is the
