@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../models/ride.dart';
+import '../../models/ride_summary.dart';
 import '../config/env.dart';
 
 enum ApiErrorKind { notFound, gone, forbidden, unauthorized, invalid, rateLimited, network, server }
@@ -98,6 +99,33 @@ class ApiClient {
         ));
     return j['accepted'] as int;
   }
+
+  /// Leader only. [label] like "Fuel station"; pass null [lat]/[lng] to clear.
+  Future<void> setRegroup(String rideId, RiderAuth auth, {double? lat, double? lng, String label = ''}) async {
+    await _send(() => _dio.put(
+          '/rides/$rideId/regroup',
+          data: {
+            'rider_id': auth.riderId,
+            'point': lat == null || lng == null ? null : {'lat': lat, 'lng': lng, 'label': label},
+          },
+          options: Options(headers: auth.headers),
+        ));
+  }
+
+  /// Leader hands off to [newLeaderId]; a member passes their own id to take
+  /// over (allowed after the leader has been offline 3+ minutes).
+  Future<void> changeLeader(String rideId, RiderAuth auth, String newLeaderId) async {
+    await _send(() => _dio.post(
+          '/rides/$rideId/leader',
+          data: {'rider_id': auth.riderId, 'new_leader_id': newLeaderId},
+          options: Options(headers: auth.headers),
+        ));
+  }
+
+  Future<RideSummary> getSummary(String rideId, RiderAuth auth) async => RideSummary.fromJson(
+        await _send(
+            () => _dio.get('/rides/$rideId/summary', options: Options(headers: auth.headers))),
+      );
 
   Future<Map<String, dynamic>> _send(Future<Response<dynamic>> Function() call) async {
     try {

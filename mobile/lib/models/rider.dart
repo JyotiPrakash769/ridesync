@@ -33,6 +33,17 @@ class Rider {
   final DateTime? lastSeenAt;
 
   bool get isLeader => role == RiderRole.leader;
+
+  Rider withRole(RiderRole r) => Rider(
+        id: id,
+        name: name,
+        role: r,
+        status: status,
+        lat: lat,
+        lng: lng,
+        speedKph: speedKph,
+        lastSeenAt: lastSeenAt,
+      );
   bool get hasPosition => lat != null && lng != null;
 
   factory Rider.fromJson(Map<String, dynamic> j) => Rider(

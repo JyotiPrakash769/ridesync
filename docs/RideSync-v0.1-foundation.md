@@ -298,3 +298,26 @@ env vars required, deploy (Railway), known limitations (v0.1 scope).
   WebSocket connects 30 → `429`. Messages over 4 KB are dropped; location updates faster than
   1/s per rider are ignored.
 - **CORS** is off unless `CORS_ORIGINS` is set (the Android app does not need it).
+
+## v0.2 additions: convoy features
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| PUT | `/rides/{id}/regroup` | `{rider_id, point: {lat, lng, label≤40} \| null}` (leader) | `{point}` |
+| POST | `/rides/{id}/leader` | `{rider_id, new_leader_id}` | `leader_changed` message |
+| GET | `/rides/{id}/summary` | — (`X-Rider-Id`/`X-Rider-Token`) | `{duration_s, falling_behind_total, riders:[{distance_km, falling_behind_count, max_gap_m}], …}` |
+| GET | `/join/{id}` | — | HTML landing page for QR links (no ride data) |
+| GET | `/privacy` | — | privacy policy |
+
+Leader handoff: the leader may appoint any rider. A member may appoint **themselves** only when the
+leader's `last_seen_at` is more than 4 minutes old (offline 60 s + 3 min).
+
+New server→client messages:
+```json
+{"type": "regroup_point", "point": {"lat": 20.3, "lng": 85.8, "label": "Fuel station", "set_at": "..."}}
+{"type": "regroup_point", "point": null}
+{"type": "leader_changed", "leader_rider_id": "...", "name": "Ravi", "reason": "handoff|takeover"}
+```
+`GET /rides/{id}` also returns `regroup`. Schema: migration `0003` (`rides.ended_at`), `0004`
+(`rides.regroup_*`, `ride_events` log). One live position per rider every 30 s is stored in
+`locations` so the summary can measure distance. Ended rides are deleted after `RETENTION_DAYS`.

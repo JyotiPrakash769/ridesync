@@ -1,3 +1,4 @@
+import 'regroup_point.dart';
 import 'rider.dart';
 
 /// GET /rides/{id} response.
@@ -9,8 +10,10 @@ class RideInfo {
     required this.leaderRiderId,
     required this.expiresAt,
     required this.riders,
+    this.regroup,
   });
 
+  final RegroupPoint? regroup;
   final String rideId;
   final bool active;
   final int thresholdM;
@@ -27,6 +30,7 @@ class RideInfo {
         riders: [
           for (final r in (j['riders'] as List)) Rider.fromJson(r as Map<String, dynamic>),
         ],
+        regroup: RegroupPoint.fromJson(j['regroup']),
       );
 }
 

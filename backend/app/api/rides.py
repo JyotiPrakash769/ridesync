@@ -25,7 +25,7 @@ from app.schemas.ride import (
 from app.schemas.rider import RiderOut
 from app.security import rate_limit
 from app.services import ride_service as rs
-from app.services import sync_service
+from app.services import convoy_service, sync_service
 from app.services.distance_service import tracker
 from app.ws.connection_manager import manager
 from app.ws.ride_socket import end_ride_rooms
@@ -84,6 +84,7 @@ async def get_ride(
         leader_rider_id=ride.leader_rider_id,
         expires_at=ride.expires_at,
         riders=[rider_out(r, now) for r in riders],
+        regroup=convoy_service.regroup_payload(ride),
     )
 
 

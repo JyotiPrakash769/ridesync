@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CHAR, DateTime, ForeignKey, Integer, String, func, text
+from sqlalchemy import CHAR, DateTime, Float, ForeignKey, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +40,11 @@ class Ride(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # When the leader ended it or it expired; drives data retention.
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Leader-set meeting point ("regroup at the fuel station"); all null = none.
+    regroup_lat: Mapped[float | None] = mapped_column(Float)
+    regroup_lng: Mapped[float | None] = mapped_column(Float)
+    regroup_label: Mapped[str | None] = mapped_column(String(40))
+    regroup_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     riders: Mapped[list[Rider]] = relationship(
         "Rider",

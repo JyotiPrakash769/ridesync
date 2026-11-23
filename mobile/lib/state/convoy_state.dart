@@ -1,6 +1,9 @@
 import '../core/network/ws_client.dart';
 import '../models/rider.dart';
+import '../models/regroup_point.dart';
 import '../shared/geo.dart';
+
+export '../models/regroup_point.dart';
 
 /// A member the server flagged as over the threshold (distance_alert).
 class DistanceAlert {
@@ -11,28 +14,6 @@ class DistanceAlert {
   final int distanceM;
 
   DistanceAlert withDistance(int d) => DistanceAlert(riderId: riderId, name: name, distanceM: d);
-}
-
-/// Leader-set meeting point ("regroup at the fuel station").
-class RegroupPoint {
-  const RegroupPoint({required this.lat, required this.lng, required this.label, this.setAt});
-
-  final double lat;
-  final double lng;
-  final String label;
-  final DateTime? setAt;
-
-  static RegroupPoint? fromJson(Object? j) {
-    if (j is! Map) return null;
-    final lat = j['lat'], lng = j['lng'];
-    if (lat is! num || lng is! num) return null;
-    return RegroupPoint(
-      lat: lat.toDouble(),
-      lng: lng.toDouble(),
-      label: (j['label'] as String?) ?? '',
-      setAt: j['set_at'] is String ? DateTime.tryParse(j['set_at'] as String)?.toUtc() : null,
-    );
-  }
 }
 
 /// One point of a rider's recent path (drawn as a faint trail).
@@ -66,6 +47,7 @@ class ConvoyState {
     this.fatalCloseCode,
     this.alerts = const {},
     this.trails = const {},
+    this.regroup,
   });
 
   final Map<String, Rider> riders;
@@ -75,6 +57,7 @@ class ConvoyState {
   final int? fatalCloseCode;
   final Map<String, DistanceAlert> alerts;
   final Map<String, List<TrailPoint>> trails;
+  final RegroupPoint? regroup;
 
   /// Direction of travel in degrees (0 = north), from the rider's last two
   /// trail points; null while they haven't moved enough to tell.
@@ -101,6 +84,7 @@ class ConvoyState {
     int? fatalCloseCode,
     Map<String, DistanceAlert>? alerts,
     Map<String, List<TrailPoint>>? trails,
+    RegroupPoint? Function()? regroup,
   }) =>
       ConvoyState(
         riders: riders ?? this.riders,
@@ -110,7 +94,17 @@ class ConvoyState {
         fatalCloseCode: fatalCloseCode ?? this.fatalCloseCode,
         alerts: alerts ?? this.alerts,
         trails: trails ?? this.trails,
+        regroup: regroup != null ? regroup() : this.regroup,
       );
+}
+
+/// Same rule as the server's takeover check: the leader has been offline
+/// (60 s) for at least another 3 minutes.
+const Duration leaderTakeoverAfter = Duration(minutes: 4);
+
+bool leaderGone(Rider? leader, DateTime now) {
+  final seen = leader?.lastSeenAt;
+  return leader != null && seen != null && now.difference(seen) > leaderTakeoverAfter;
 }
 
 /// Pure reducer for server -> client WS messages (foundation doc §5).
@@ -154,6 +148,17 @@ ConvoyState applyMessage(ConvoyState s, Map<String, dynamic> msg) {
       );
     case 'ride_ended':
       return s.copyWith(ended: true);
+    case 'regroup_point':
+      return s.copyWith(regroup: () => RegroupPoint.fromJson(msg['point']));
+    case 'leader_changed':
+      final newId = msg['leader_rider_id'] as String;
+      return s.copyWith(
+        riders: {
+          for (final e in s.riders.entries)
+            e.key: e.value.withRole(e.key == newId ? RiderRole.leader : RiderRole.member),
+        },
+        alerts: const {}, // distances are now measured to the new leader
+      );
     case 'threshold_updated':
       // The server re-evaluates everyone against the new value.
       return s.copyWith(thresholdM: msg['threshold_m'] as int, alerts: const {});

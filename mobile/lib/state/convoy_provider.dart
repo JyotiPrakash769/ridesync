@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../core/alerts/announcer.dart';
 import '../core/config/env.dart';
 import '../core/location/location_service.dart';
 import '../core/network/ws_client.dart';
@@ -12,9 +13,11 @@ import '../core/storage/local_db.dart';
 import '../core/storage/location_queue.dart';
 import '../features/offline_sync/sync_manager.dart';
 import '../models/location_point.dart';
+import '../models/rider.dart';
 import 'convoy_state.dart';
 import 'ride_session.dart';
 import 'ride_session_provider.dart';
+import 'settings.dart';
 
 /// Send cadence: a location_update every ~4s when there is a fresh fix,
 /// otherwise a heartbeat at most every 10s so the rider stays "online".
@@ -22,6 +25,11 @@ const Duration sendInterval = Duration(seconds: 4);
 const Duration heartbeatInterval = Duration(seconds: 10);
 
 final locationServiceProvider = Provider<LocationService>((ref) => LocationService());
+
+final announcerProvider = Provider<RideAnnouncer>((ref) => RideAnnouncer());
+
+/// Localised announcer phrases; replaced by the l10n layer.
+final announcerStringsProvider = Provider<AnnouncerStrings>((ref) => const AnnouncerStrings());
 
 final wsConnectorProvider = Provider<WsConnector?>((ref) => null); // null = real socket
 
@@ -69,7 +77,10 @@ class ConvoyController extends Notifier<ConvoyState> {
     );
     _sync = sync;
     _subs
-      ..add(ws.messages.listen((m) => state = applyMessage(state, m)))
+      ..add(ws.messages.listen((m) {
+        state = applyMessage(state, m);
+        _onEvent(m);
+      }))
       ..add(ws.states.listen((c) {
         state = state.copyWith(conn: c, fatalCloseCode: ws.fatalCloseCode);
         if (c == WsConnState.connected) {
@@ -97,7 +108,12 @@ class ConvoyController extends Notifier<ConvoyState> {
       for (final r in info.riders) {
         known.putIfAbsent(r.id, () => r);
       }
-      state = state.copyWith(thresholdM: info.thresholdM, riders: known, ended: !info.active);
+      state = state.copyWith(
+        thresholdM: info.thresholdM,
+        riders: known,
+        ended: !info.active,
+        regroup: () => state.regroup ?? info.regroup,
+      );
     } catch (_) {/* the socket snapshot fills this in anyway */}
   }
 
@@ -141,6 +157,55 @@ class ConvoyController extends Notifier<ConvoyState> {
     if (now.difference(_lastSend) >= heartbeatInterval && ws.send({'type': 'heartbeat'})) {
       _lastSend = now;
     }
+  }
+
+  /// Speech/vibration + keeping our own role in sync after a leader change.
+  void _onEvent(Map<String, dynamic> m) {
+    final session = ref.read(rideSessionProvider);
+    if (session == null) return;
+    if (m['type'] == 'leader_changed') {
+      final iLead = m['leader_rider_id'] == session.riderId;
+      unawaited(ref
+          .read(rideSessionProvider.notifier)
+          .updateRole(iLead ? RiderRole.leader : RiderRole.member));
+    }
+    unawaited(ref.read(announcerProvider).onMessage(
+          m,
+          isLeader: session.isLeader,
+          selfId: session.riderId,
+          settings: ref.read(settingsProvider),
+          strings: ref.read(announcerStringsProvider),
+        ));
+  }
+
+  /// Leader: set the meeting point (label like "Fuel station").
+  Future<void> setRegroup(double lat, double lng, String label) async {
+    final s = ref.read(rideSessionProvider);
+    if (s == null) return;
+    await ref.read(apiClientProvider).setRegroup(s.rideId, s.auth, lat: lat, lng: lng, label: label);
+  }
+
+  Future<void> clearRegroup() async {
+    final s = ref.read(rideSessionProvider);
+    if (s == null) return;
+    await ref.read(apiClientProvider).setRegroup(s.rideId, s.auth);
+  }
+
+  /// Leader hands off; a member passes their own id to take over.
+  Future<void> changeLeader(String newLeaderId) async {
+    final s = ref.read(rideSessionProvider);
+    if (s == null) return;
+    await ref.read(apiClientProvider).changeLeader(s.rideId, s.auth, newLeaderId);
+  }
+
+  /// The leader ended the ride via REST: show the summary even if the
+  /// ride_ended broadcast doesn't arrive (socket down).
+  void markEnded() => state = state.copyWith(ended: true);
+
+  /// Our latest GPS fix (for "regroup at my location").
+  ({double lat, double lng})? get myPosition {
+    final p = _latest;
+    return p == null ? null : (lat: p.latitude, lng: p.longitude);
   }
 
   /// Leader-only. The room (including us) gets threshold_updated.

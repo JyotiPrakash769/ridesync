@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from sqlalchemy import delete
 
 from app.db.session import AsyncSessionLocal
+from app.models.location import Location
 from app.models.rider import ROLE_LEADER, Rider
 from app.schemas.ws_messages import (
     CLOSE_LEFT,
@@ -27,6 +28,7 @@ from app.schemas.ws_messages import (
 )
 from app.security import LIMITS, limiter, token_matches
 from app.services import ride_service as rs
+from app.services.convoy_service import record_falling_behind
 from app.services.distance_service import tracker
 from app.services.positions import evaluate_alerts
 from app.ws.connection_manager import manager
@@ -37,6 +39,10 @@ router = APIRouter()
 MAX_MESSAGE_BYTES = 4096
 # Location updates faster than this per rider are dropped (clients send ~every 4s).
 MIN_UPDATE_INTERVAL_S = float(os.environ.get("WS_MIN_UPDATE_INTERVAL_S", "1.0"))
+# Live ticks aren't all stored; one point per rider this often goes to
+# `locations` so the ride summary can measure distance travelled.
+SNAPSHOT_INTERVAL_S = float(os.environ.get("WS_SNAPSHOT_INTERVAL_S", "30"))
+_last_snapshot: dict[str, float] = {}
 
 
 async def _authorize(ride_id: str, rider_id: str, token: str) -> tuple[str, int | None]:
@@ -71,12 +77,19 @@ async def on_location(ride_id: str, rider_id: str, msg: LocationUpdate) -> None:
         rider.last_lat = msg.lat
         rider.last_lng = msg.lng
         rider.last_speed_kph = msg.speed_kph
-        rider.last_seen_at = rs.utcnow()  # server clock, not msg.ts
+        now = rs.utcnow()
+        rider.last_seen_at = now  # server clock, not msg.ts
         rider.is_online = True
+        mono = time.monotonic()
+        if mono - _last_snapshot.get(rider_id, -1e9) >= SNAPSHOT_INTERVAL_S:
+            _last_snapshot[rider_id] = mono
+            db.add(Location(rider_id=rider.id, lat=msg.lat, lng=msg.lng, recorded_at=now))
         await db.commit()
     await manager.broadcast_positions(ride_id)
     # Alerts go to the whole room per the protocol; the app shows them to the leader.
-    for alert in await evaluate_alerts(ride_id):
+    alerts = await evaluate_alerts(ride_id)
+    await record_falling_behind(ride_id, alerts)  # persist first: sockets may drop mid-send
+    for alert in alerts:
         await manager.broadcast(ride_id, alert)
 
 

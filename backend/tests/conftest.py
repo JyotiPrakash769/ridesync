@@ -20,6 +20,7 @@ os.environ["DB_NULL_POOL"] = "1"  # no pooled connections shared across event lo
 os.environ["DISABLE_BACKGROUND_TASKS"] = "1"
 os.environ["WS_MIN_UPDATE_INTERVAL_S"] = "0"  # tests send updates back-to-back
 os.environ["CORS_ORIGINS"] = ""  # test the production default, not a local .env
+os.environ["WS_SNAPSHOT_INTERVAL_S"] = "0"  # store every tick in tests
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -47,7 +48,7 @@ async def _clean_tables() -> None:
     limiter.reset()
 
     async with engine.begin() as conn:
-        await conn.execute(text("TRUNCATE locations, riders, rides RESTART IDENTITY CASCADE"))
+        await conn.execute(text("TRUNCATE ride_events, locations, riders, rides RESTART IDENTITY CASCADE"))
 
 
 @pytest.fixture

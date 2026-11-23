@@ -39,6 +39,7 @@ class RideOut(BaseModel):
     leader_rider_id: uuid.UUID | None
     expires_at: datetime
     riders: list[RiderOut]
+    regroup: dict | None = None  # {lat, lng, label, set_at} (v0.2)
 
 
 ALLOWED_THRESHOLDS_M = (100, 300, 500, 1000)
@@ -79,3 +80,19 @@ class SyncIn(BaseModel):
 
 class SyncOut(BaseModel):
     accepted: int
+
+
+class RegroupIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    label: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] = ""
+
+
+class SetRegroupIn(BaseModel):
+    rider_id: uuid.UUID
+    point: RegroupIn | None  # null clears the regroup point
+
+
+class ChangeLeaderIn(BaseModel):
+    rider_id: uuid.UUID  # caller
+    new_leader_id: uuid.UUID
