@@ -44,6 +44,8 @@ class Rider(Base):
     last_lat: Mapped[float | None] = mapped_column(Float)
     last_lng: Mapped[float | None] = mapped_column(Float)
     last_speed_kph: Mapped[float | None] = mapped_column(Float)
+    # SHA-256 of the rider's secret token (app/security.py). Never the token.
+    token_hash: Mapped[str | None] = mapped_column(String(64))
     # Kept because it is in the schema contract; display status is always
     # derived from last_seen_at (services.ride_service.derive_status).
     is_online: Mapped[bool] = mapped_column(

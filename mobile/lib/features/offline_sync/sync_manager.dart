@@ -40,7 +40,8 @@ class SyncManager {
     } on ApiException catch (e) {
       if (e.kind == ApiErrorKind.gone ||
           e.kind == ApiErrorKind.notFound ||
-          e.kind == ApiErrorKind.forbidden) {
+          e.kind == ApiErrorKind.forbidden ||
+          e.kind == ApiErrorKind.unauthorized) {
         await queue.clear();
         return SyncResult.dropped;
       }

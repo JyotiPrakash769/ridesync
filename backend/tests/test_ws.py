@@ -21,10 +21,23 @@ def tc():
         yield c
 
 
+TOKENS: dict[str, str] = {}
+
+
 def _ride(tc):
     r = tc.post("/rides", json={"leader_name": "Asha"}).json()
     b = tc.post(f"/rides/{r['ride_id']}/join", json={"display_name": "Ravi"}).json()
+    TOKENS[r["leader_rider_id"]] = r["rider_token"]
+    TOKENS[b["rider_id"]] = b["rider_token"]
     return r["ride_id"], r["leader_rider_id"], b["rider_id"]
+
+
+def _url(ride_id, rider_id):
+    return f"/ws/rides/{ride_id}?rider_id={rider_id}&token={TOKENS[rider_id]}"
+
+
+def _h(rider_id):
+    return {"X-Rider-Id": rider_id, "X-Rider-Token": TOKENS[rider_id]}
 
 
 def _recv_type(ws, type_, limit=10):
@@ -42,9 +55,9 @@ def _by_id(positions, rider_id):
 
 def test_position_from_a_reaches_b(tc):
     ride_id, a_id, b_id = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         _recv_type(a, "rider_positions")  # own connect snapshot
-        with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={b_id}") as b:
+        with tc.websocket_connect(_url(ride_id, b_id)) as b:
             _recv_type(b, "rider_positions")  # B's connect snapshot
             _recv_type(a, "rider_positions")  # A sees B's connect snapshot too
 
@@ -61,9 +74,9 @@ def test_position_from_a_reaches_b(tc):
 
 def test_disconnect_does_not_remove_or_offline_rider(tc):
     ride_id, a_id, b_id = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         _recv_type(a, "rider_positions")
-        with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={b_id}") as b:
+        with tc.websocket_connect(_url(ride_id, b_id)) as b:
             _recv_type(b, "rider_positions")
             b.send_json({"type": "location_update", "lat": 1.0, "lng": 2.0})
             _recv_type(b, "rider_positions")
@@ -76,7 +89,7 @@ def test_disconnect_does_not_remove_or_offline_rider(tc):
         b_row = _by_id(msg, b_id)
         assert b_row["status"] == "online"
         assert (b_row["lat"], b_row["lng"]) == (1.0, 2.0)
-    riders = tc.get(f"/rides/{ride_id}").json()["riders"]
+    riders = tc.get(f"/rides/{ride_id}", headers=_h(a_id)).json()["riders"]
     assert {r["rider_id"] for r in riders} == {a_id, b_id}
 
 
@@ -88,7 +101,7 @@ def test_status_derived_from_last_seen(tc, age_s, expected):
     asyncio.run(exec_sql(
         "UPDATE riders SET last_seen_at = now() - make_interval(secs => :s) WHERE id = :id",
         s=age_s, id=uuid.UUID(b_id)))
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         msg = _recv_type(a, "rider_positions")
         assert _by_id(msg, b_id)["status"] == expected
         assert _by_id(msg, a_id)["status"] == "online"  # connecting counts as seen
@@ -98,7 +111,7 @@ def test_heartbeat_keeps_rider_online(tc):
     import asyncio
 
     ride_id, a_id, _ = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         _recv_type(a, "rider_positions")
         asyncio.run(exec_sql(
             "UPDATE riders SET last_seen_at = now() - interval '40 seconds' WHERE id=:id",
@@ -110,9 +123,10 @@ def test_heartbeat_keeps_rider_online(tc):
 
 def test_rider_joined_broadcast(tc):
     ride_id, a_id, _ = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         _recv_type(a, "rider_positions")
         c = tc.post(f"/rides/{ride_id}/join", json={"display_name": "Chen"}).json()
+        TOKENS[c["rider_id"]] = c["rider_token"]
         msg = _recv_type(a, "rider_joined")
         assert msg == {"type": "rider_joined", "rider_id": c["rider_id"], "name": "Chen",
                        "role": "member"}
@@ -120,34 +134,35 @@ def test_rider_joined_broadcast(tc):
 
 def test_leave_broadcasts_rider_left_and_removes_rider(tc):
     ride_id, a_id, b_id = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         _recv_type(a, "rider_positions")
-        with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={b_id}") as b:
+        with tc.websocket_connect(_url(ride_id, b_id)) as b:
             _recv_type(b, "rider_positions")
             b.send_json({"type": "leave"})
             with pytest.raises(WebSocketDisconnect):
                 for _ in range(10):
                     b.receive_json()
         assert _recv_type(a, "rider_left") == {"type": "rider_left", "rider_id": b_id}
-    riders = tc.get(f"/rides/{ride_id}").json()["riders"]
+    riders = tc.get(f"/rides/{ride_id}", headers=_h(a_id)).json()["riders"]
     assert [r["rider_id"] for r in riders] == [a_id]
 
 
 def test_leader_leave_is_ignored(tc):
     ride_id, a_id, b_id = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         _recv_type(a, "rider_positions")
         a.send_json({"type": "leave"})
         a.send_json({"type": "location_update", "lat": 3.0, "lng": 4.0})
         assert _by_id(_recv_type(a, "rider_positions"), a_id)["lat"] == 3.0
-    assert len(tc.get(f"/rides/{ride_id}").json()["riders"]) == 2
+    assert len(tc.get(f"/rides/{ride_id}", headers=_h(a_id)).json()["riders"]) == 2
 
 
 def test_ride_ended_broadcast_and_close(tc):
     ride_id, a_id, b_id = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={b_id}") as b:
+    with tc.websocket_connect(_url(ride_id, b_id)) as b:
         _recv_type(b, "rider_positions")
-        assert tc.post(f"/rides/{ride_id}/end", json={"rider_id": a_id}).status_code == 200
+        assert tc.post(f"/rides/{ride_id}/end", json={"rider_id": a_id},
+                       headers=_h(a_id)).status_code == 200
         assert _recv_type(b, "ride_ended") == {"type": "ride_ended"}
         with pytest.raises(WebSocketDisconnect) as exc:
             b.receive_json()
@@ -156,7 +171,7 @@ def test_ride_ended_broadcast_and_close(tc):
 
 def test_invalid_messages_are_ignored(tc):
     ride_id, a_id, _ = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         _recv_type(a, "rider_positions")
         a.send_text("not json")
         a.send_json({"type": "teleport"})
@@ -165,18 +180,23 @@ def test_invalid_messages_are_ignored(tc):
         assert _by_id(_recv_type(a, "rider_positions"), a_id)["lat"] == 5.0
 
 
-@pytest.mark.parametrize("case", ["missing_ride", "ended_ride", "foreign_rider", "bad_uuid"])
+@pytest.mark.parametrize(
+    "case", ["missing_ride", "ended_ride", "foreign_rider", "bad_uuid", "no_token", "wrong_token"]
+)
 def test_socket_refusals(tc, case):
-    ride_id, a_id, _ = _ride(tc)
+    ride_id, a_id, b_id = _ride(tc)
     other = tc.post("/rides", json={"leader_name": "X"}).json()
+    TOKENS[other["leader_rider_id"]] = other["rider_token"]
     url, code = {
-        "missing_ride": (f"/ws/rides/ZZZZZZ?rider_id={a_id}", 4404),
-        "ended_ride": (f"/ws/rides/{ride_id}?rider_id={a_id}", 4410),
-        "foreign_rider": (f"/ws/rides/{ride_id}?rider_id={other['leader_rider_id']}", 4403),
-        "bad_uuid": (f"/ws/rides/{ride_id}?rider_id=nope", 4403),
+        "missing_ride": (_url("ZZZZZZ", a_id), 4404),
+        "ended_ride": (_url(ride_id, a_id), 4410),
+        "foreign_rider": (_url(ride_id, other["leader_rider_id"]), 4403),
+        "bad_uuid": (f"/ws/rides/{ride_id}?rider_id=nope&token=x", 4401),
+        "no_token": (f"/ws/rides/{ride_id}?rider_id={a_id}", 4401),
+        "wrong_token": (f"/ws/rides/{ride_id}?rider_id={a_id}&token={TOKENS[b_id]}", 4401),
     }[case]
     if case == "ended_ride":
-        tc.post(f"/rides/{ride_id}/end", json={"rider_id": a_id})
+        tc.post(f"/rides/{ride_id}/end", json={"rider_id": a_id}, headers=_h(a_id))
     with tc.websocket_connect(url) as ws, pytest.raises(WebSocketDisconnect) as exc:
         ws.receive_json()
     assert exc.value.code == code
@@ -189,9 +209,9 @@ DEG_PER_M = 1 / 111_194.93
 
 def test_distance_alert_on_transition_only(tc):
     ride_id, a_id, b_id = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={a_id}") as a:
+    with tc.websocket_connect(_url(ride_id, a_id)) as a:
         _recv_type(a, "rider_positions")
-        with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={b_id}") as b:
+        with tc.websocket_connect(_url(ride_id, b_id)) as b:
             _recv_type(b, "rider_positions")
             _recv_type(a, "rider_positions")
             a.send_json({"type": "location_update", "lat": 20.0, "lng": 85.0})
@@ -219,9 +239,10 @@ def test_distance_alert_on_transition_only(tc):
 
 def test_threshold_patch_broadcasts_to_room(tc):
     ride_id, a_id, b_id = _ride(tc)
-    with tc.websocket_connect(f"/ws/rides/{ride_id}?rider_id={b_id}") as b:
+    with tc.websocket_connect(_url(ride_id, b_id)) as b:
         _recv_type(b, "rider_positions")
-        r = tc.patch(f"/rides/{ride_id}/threshold", json={"rider_id": a_id, "threshold_m": 1000})
+        r = tc.patch(f"/rides/{ride_id}/threshold", json={"rider_id": a_id, "threshold_m": 1000},
+                     headers=_h(a_id))
         assert r.status_code == 200
         assert _recv_type(b, "threshold_updated") == {"type": "threshold_updated",
                                                       "threshold_m": 1000}

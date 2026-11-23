@@ -11,7 +11,14 @@ enum WsConnState { connecting, connected, reconnecting, closed }
 const int closeRideNotFound = 4404;
 const int closeRideEnded = 4410;
 const int closeNotARider = 4403;
-const Set<int> fatalCloseCodes = {closeRideNotFound, closeRideEnded, closeNotARider};
+const int closeUnauthorized = 4401;
+/// 4429 (rate limited) is NOT fatal: the normal backoff retries later.
+const Set<int> fatalCloseCodes = {
+  closeRideNotFound,
+  closeRideEnded,
+  closeNotARider,
+  closeUnauthorized,
+};
 
 /// Reconnect delays: 1s, 2s, 5s, 10s, then 10s forever.
 const List<Duration> backoffSchedule = [

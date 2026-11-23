@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.security import hash_token, new_token, token_matches, unauthorized
 from app.models.ride import RIDE_ACTIVE, RIDE_ENDED, Ride
 from app.models.rider import ROLE_LEADER, ROLE_MEMBER, Rider
 
@@ -87,9 +88,23 @@ async def get_rider_in_ride(db: AsyncSession, ride: Ride, rider_id: uuid.UUID) -
     return rider
 
 
-async def require_leader(db: AsyncSession, ride: Ride, rider_id: uuid.UUID) -> Rider:
-    rider = await get_rider_in_ride(db, ride, rider_id)
-    if rider is None or rider.role != ROLE_LEADER or ride.leader_rider_id != rider.id:
+async def authenticate(
+    db: AsyncSession, ride: Ride, rider_id: uuid.UUID, token: str | None
+) -> Rider:
+    """401 unless `token` is this rider's secret; 403 if not in this ride."""
+    rider = await db.get(Rider, rider_id)
+    if rider is None or not token_matches(token, rider.token_hash):
+        raise unauthorized()
+    if rider.ride_id != ride.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not_a_rider")
+    return rider
+
+
+async def require_leader(
+    db: AsyncSession, ride: Ride, rider_id: uuid.UUID, token: str | None
+) -> Rider:
+    rider = await authenticate(db, ride, rider_id, token)
+    if rider.role != ROLE_LEADER or ride.leader_rider_id != rider.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "leader_only")
     return rider
 
@@ -101,7 +116,7 @@ async def list_riders(db: AsyncSession, ride_id: str) -> list[Rider]:
     return list(rows)
 
 
-async def create_ride(db: AsyncSession, leader_name: str) -> tuple[Ride, Rider]:
+async def create_ride(db: AsyncSession, leader_name: str) -> tuple[Ride, Rider, str]:
     now = utcnow()
     ttl = timedelta(hours=get_settings().RIDE_TTL_HOURS)
     for _ in range(10):
@@ -114,35 +129,45 @@ async def create_ride(db: AsyncSession, leader_name: str) -> tuple[Ride, Rider]:
     ride = Ride(id=ride_id, status=RIDE_ACTIVE, created_at=now, expires_at=now + ttl)
     db.add(ride)
     await db.flush()
-    leader = Rider(ride_id=ride_id, display_name=leader_name, role=ROLE_LEADER, joined_at=now)
+    token = new_token()
+    leader = Rider(
+        ride_id=ride_id, display_name=leader_name, role=ROLE_LEADER, joined_at=now,
+        token_hash=hash_token(token),
+    )
     db.add(leader)
     await db.flush()
     ride.leader_rider_id = leader.id
     await db.commit()
-    return ride, leader
+    return ride, leader, token
 
 
-async def join_ride(db: AsyncSession, ride_id: str, display_name: str) -> Rider:
+async def join_ride(db: AsyncSession, ride_id: str, display_name: str) -> tuple[Rider, str]:
     ride = await get_live_ride_or_raise(db, ride_id)
-    rider = Rider(ride_id=ride.id, display_name=display_name, role=ROLE_MEMBER, joined_at=utcnow())
+    token = new_token()
+    rider = Rider(
+        ride_id=ride.id, display_name=display_name, role=ROLE_MEMBER, joined_at=utcnow(),
+        token_hash=hash_token(token),
+    )
     db.add(rider)
     await db.commit()
-    return rider
+    return rider, token
 
 
 async def set_threshold(
-    db: AsyncSession, ride_id: str, rider_id: uuid.UUID, threshold_m: int
+    db: AsyncSession, ride_id: str, rider_id: uuid.UUID, token: str | None, threshold_m: int
 ) -> Ride:
     ride = await get_live_ride_or_raise(db, ride_id)
-    await require_leader(db, ride, rider_id)
+    await require_leader(db, ride, rider_id, token)
     ride.threshold_m = threshold_m
     await db.commit()
     return ride
 
 
-async def end_ride(db: AsyncSession, ride_id: str, rider_id: uuid.UUID) -> Ride:
+async def end_ride(
+    db: AsyncSession, ride_id: str, rider_id: uuid.UUID, token: str | None
+) -> Ride:
     ride = await get_live_ride_or_raise(db, ride_id)
-    await require_leader(db, ride, rider_id)
+    await require_leader(db, ride, rider_id, token)
     ride.status = RIDE_ENDED
     await db.commit()
     return ride

@@ -16,3 +16,7 @@ non-leader, `422` invalid body. `threshold_m` must be one of 100, 300, 500, 1000
 `/sync`: 1–1000 points, `recorded_at` must include a timezone; newest point updates the
 rider's live position only if newer than `last_seen_at`.
 Ride IDs: 6 chars from `ABCDEFGHJKMNPQRSTUVWXYZ234567`, case-insensitive on input.
+
+**v0.2 security:** create/join return `rider_token`. Send `X-Rider-Token` on threshold / end /
+sync (body keeps `rider_id`) and `X-Rider-Id` + `X-Rider-Token` on `GET /rides/{id}`.
+`401` = missing/wrong token, `429` = rate limited.

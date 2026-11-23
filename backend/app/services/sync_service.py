@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import HTTPException, status
 from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,15 +13,14 @@ from app.services import ride_service as rs
 
 
 async def ingest(
-    db: AsyncSession, ride_id: str, rider_id: uuid.UUID, points: list[SyncPoint]
+    db: AsyncSession, ride_id: str, rider_id: uuid.UUID, token: str | None,
+    points: list[SyncPoint],
 ) -> int:
     """Append points to `locations` and move the rider's live position to the
     newest point, but only if it is newer than what the live socket already
     reported (old queued points must never overwrite a fresher position)."""
     ride = await rs.get_live_ride_or_raise(db, ride_id)
-    rider = await rs.get_rider_in_ride(db, ride, rider_id)
-    if rider is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "not_a_rider")
+    rider = await rs.authenticate(db, ride, rider_id, token)
 
     now = rs.utcnow()
     # A phone clock running ahead must not make a point look "newer than now".

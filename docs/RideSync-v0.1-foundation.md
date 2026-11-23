@@ -280,3 +280,21 @@ env vars required, deploy (Railway), known limitations (v0.1 scope).
 - **No `users` table** — `riders` rows are ephemeral, scoped to one ride, deleted via `ON DELETE CASCADE` when a ride is cleaned up.
 - **`expires_at`** is set at creation (`created_at + RIDE_TTL_HOURS`); a periodic task (`tasks/expiry_cleanup.py`) marks rides `ended` past that point — answers the "what happens when the leader closes the app" question by *not* depending on the leader's connection state at all. A ride stays alive until it expires or the leader explicitly ends it.
 - **In-memory `ConnectionManager`** is fine for v0.1 single-instance deploy; if you ever scale the backend horizontally, this needs to move to Redis pub/sub — not needed now, just flagging it so it doesn't surprise you later.
+
+---
+
+## v0.2 additions: security
+
+- **Rider tokens.** `POST /rides` and `POST /rides/{id}/join` also return `rider_token` (random,
+  256-bit). Only its SHA-256 is stored (`riders.token_hash`, migration `0002`).
+  Authenticated REST calls send `X-Rider-Token` (and `X-Rider-Id` on GET); the body keeps
+  `rider_id` as before. The WebSocket URL is `/ws/rides/{id}?rider_id=…&token=…`.
+  Errors: `401` missing/wrong token, `403` valid rider of another ride / not the leader.
+- **GET /rides/{id}** now requires a rider of that ride (names and positions are private to the
+  group).
+- **WebSocket close codes:** `4401` bad/missing token (fatal), `4429` too many connects from
+  this IP (not fatal: client retries with backoff).
+- **Rate limits** (per client IP, per minute): create 10, join 20, reads 120, writes 60,
+  WebSocket connects 30 → `429`. Messages over 4 KB are dropped; location updates faster than
+  1/s per rider are ignored.
+- **CORS** is off unless `CORS_ORIGINS` is set (the Android app does not need it).

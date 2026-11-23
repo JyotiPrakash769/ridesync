@@ -90,13 +90,15 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
     setState(() => _busy = true);
     try {
       if (session.isLeader) {
-        await ref.read(apiClientProvider).endRide(session.rideId, session.riderId);
+        await ref.read(apiClientProvider).endRide(session.rideId, session.auth);
       } else {
         ref.read(convoyProvider.notifier).sendLeave();
       }
       await ref.read(rideSessionProvider.notifier).clear();
     } on ApiException catch (e) {
-      if (e.kind == ApiErrorKind.gone || e.kind == ApiErrorKind.notFound) {
+      if (e.kind == ApiErrorKind.gone ||
+          e.kind == ApiErrorKind.notFound ||
+          e.kind == ApiErrorKind.unauthorized) {
         await ref.read(rideSessionProvider.notifier).clear();
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
@@ -283,6 +285,7 @@ class _RideOverView extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
     final message = switch (code) {
       closeNotARider => 'You\'re no longer part of this ride.',
+      closeUnauthorized => 'Your ride session is no longer valid. Join the ride again.',
       closeRideNotFound => 'This ride no longer exists.',
       _ => 'This ride has ended.',
     };

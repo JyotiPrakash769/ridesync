@@ -35,7 +35,9 @@ final connectivityProvider = Provider<Stream<List<ConnectivityResult>>?>(
 );
 
 Uri rideSocketUri(RideSession s) =>
-    Uri.parse('${Env.wsBaseUrl}/ws/rides/${s.rideId}?rider_id=${s.riderId}');
+    Uri.parse('${Env.wsBaseUrl}/ws/rides/${s.rideId}').replace(
+      queryParameters: {'rider_id': s.riderId, 'token': s.riderToken},
+    );
 
 final convoyProvider = NotifierProvider<ConvoyController, ConvoyState>(ConvoyController.new);
 
@@ -63,7 +65,7 @@ class ConvoyController extends Notifier<ConvoyState> {
     final api = ref.read(apiClientProvider);
     final sync = SyncManager(
       queue: ref.read(locationQueueProvider),
-      upload: (points) => api.syncPoints(session.rideId, session.riderId, points),
+      upload: (points) => api.syncPoints(session.rideId, session.auth, points),
     );
     _sync = sync;
     _subs
@@ -90,7 +92,7 @@ class ConvoyController extends Notifier<ConvoyState> {
 
   Future<void> _loadInitial(RideSession s) async {
     try {
-      final info = await ref.read(apiClientProvider).getRide(s.rideId);
+      final info = await ref.read(apiClientProvider).getRide(s.rideId, s.auth);
       final known = {...state.riders};
       for (final r in info.riders) {
         known.putIfAbsent(r.id, () => r);
@@ -146,7 +148,7 @@ class ConvoyController extends Notifier<ConvoyState> {
     final session = ref.read(rideSessionProvider);
     if (session == null || !session.isLeader) return;
     final applied =
-        await ref.read(apiClientProvider).setThreshold(session.rideId, session.riderId, meters);
+        await ref.read(apiClientProvider).setThreshold(session.rideId, session.auth, meters);
     state = state.copyWith(thresholdM: applied, alerts: const {});
   }
 

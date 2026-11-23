@@ -23,3 +23,7 @@ Status derived from `last_seen_at`: `online` (<15s), `weak` (15–60s), `offline
 `rider_positions` is sent on each location_update, on connect, and every 5s per room.
 Close codes: `4404` ride not found, `4410` ride ended, `4403` not a rider of this ride — do not
 reconnect after these. Client reconnect backoff: 1s, 2s, 5s, 10s (capped).
+
+**v0.2 security:** connect with `?rider_id=…&token=…`. Close `4401` = bad token (fatal),
+`4429` = rate limited (retry with backoff). Messages > 4 KB dropped; > 1 location update/s
+per rider ignored.

@@ -45,6 +45,7 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
       final session = await ref.read(rideSessionProvider.notifier).adopt(
             rideId: created.rideId,
             riderId: created.leaderRiderId,
+            riderToken: created.riderToken,
             leader: true,
             displayName: name,
             activate: false,

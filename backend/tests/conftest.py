@@ -18,6 +18,8 @@ TEST_DB_URL = os.environ.get(
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["DB_NULL_POOL"] = "1"  # no pooled connections shared across event loops
 os.environ["DISABLE_BACKGROUND_TASKS"] = "1"
+os.environ["WS_MIN_UPDATE_INTERVAL_S"] = "0"  # tests send updates back-to-back
+os.environ["CORS_ORIGINS"] = ""  # test the production default, not a local .env
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -40,6 +42,9 @@ def _migrate_test_db() -> None:
 @pytest.fixture(autouse=True)
 async def _clean_tables() -> None:
     from app.db.session import engine
+    from app.security import limiter
+
+    limiter.reset()
 
     async with engine.begin() as conn:
         await conn.execute(text("TRUNCATE locations, riders, rides RESTART IDENTITY CASCADE"))
@@ -66,3 +71,9 @@ async def ride(client):
     r = await client.post("/rides", json={"leader_name": "Asha"})
     assert r.status_code == 201, r.text
     return r.json()
+
+
+def H(x: dict) -> dict:
+    """Auth headers for a create (leader) or join response dict."""
+    rid = x.get("leader_rider_id") or x["rider_id"]
+    return {"X-Rider-Id": str(rid), "X-Rider-Token": x["rider_token"]}

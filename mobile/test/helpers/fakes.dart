@@ -22,14 +22,16 @@ Future<SessionStore> tempSessionStore() async =>
 class FakeApi extends ApiClient {
   FakeApi({this.joinError, this.joinRiderId = 'rider-1'}) : super(dio: Dio());
 
+  static const String token = 'secret-token';
+
   final ApiException? joinError;
   final String joinRiderId;
   final List<(String, String)> joins = [];
 
   @override
-  Future<String> joinRide(String rideId, String displayName) async {
+  Future<JoinedRide> joinRide(String rideId, String displayName) async {
     joins.add((rideId, displayName));
     if (joinError != null) throw joinError!;
-    return joinRiderId;
+    return JoinedRide(riderId: joinRiderId, riderToken: token);
   }
 }

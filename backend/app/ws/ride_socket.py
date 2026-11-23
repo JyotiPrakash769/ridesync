@@ -1,8 +1,10 @@
-"""WS /ws/rides/{ride_id}?rider_id= : live positions for one ride."""
+"""WS /ws/rides/{ride_id}?rider_id=&token= : live positions for one ride."""
 
 from __future__ import annotations
 
 import logging
+import os
+import time
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -14,13 +16,16 @@ from app.models.rider import ROLE_LEADER, Rider
 from app.schemas.ws_messages import (
     CLOSE_LEFT,
     CLOSE_NOT_A_RIDER,
+    CLOSE_RATE_LIMITED,
     CLOSE_RIDE_ENDED,
     CLOSE_RIDE_NOT_FOUND,
+    CLOSE_UNAUTHORIZED,
     Heartbeat,
     Leave,
     LocationUpdate,
     client_message_adapter,
 )
+from app.security import LIMITS, limiter, token_matches
 from app.services import ride_service as rs
 from app.services.distance_service import tracker
 from app.services.positions import evaluate_alerts
@@ -29,23 +34,29 @@ from app.ws.connection_manager import manager
 log = logging.getLogger(__name__)
 router = APIRouter()
 
+MAX_MESSAGE_BYTES = 4096
+# Location updates faster than this per rider are dropped (clients send ~every 4s).
+MIN_UPDATE_INTERVAL_S = float(os.environ.get("WS_MIN_UPDATE_INTERVAL_S", "1.0"))
 
-async def _authorize(ride_id: str, rider_id: str) -> tuple[str, int | None]:
+
+async def _authorize(ride_id: str, rider_id: str, token: str) -> tuple[str, int | None]:
     """Returns (normalized ride id, close code or None if allowed)."""
     ride_id = rs.normalize_ride_id(ride_id)
     try:
         rid = uuid.UUID(rider_id)
     except ValueError:
-        return ride_id, CLOSE_NOT_A_RIDER
+        return ride_id, CLOSE_UNAUTHORIZED
     async with AsyncSessionLocal() as db:
         ride = await db.get(rs.Ride, ride_id)
         if ride is None:
             return ride_id, CLOSE_RIDE_NOT_FOUND
+        rider = await db.get(Rider, rid)
+        if rider is None or not token_matches(token, rider.token_hash):
+            return ride_id, CLOSE_UNAUTHORIZED
+        if rider.ride_id != ride.id:
+            return ride_id, CLOSE_NOT_A_RIDER
         if not rs.is_ride_live(ride):
             return ride_id, CLOSE_RIDE_ENDED
-        if await rs.get_rider_in_ride(db, ride, rid) is None:
-            return ride_id, CLOSE_NOT_A_RIDER
-        rider = await db.get(Rider, rid)
         rider.last_seen_at = rs.utcnow()
         rider.is_online = True
         await db.commit()
@@ -92,25 +103,38 @@ async def on_leave(ride_id: str, rider_id: str) -> bool:
 
 
 @router.websocket("/ws/rides/{ride_id}")
-async def ride_socket(ws: WebSocket, ride_id: str, rider_id: str = "") -> None:
+async def ride_socket(ws: WebSocket, ride_id: str, rider_id: str = "", token: str = "") -> None:
     await ws.accept()
-    ride_id, refuse = await _authorize(ride_id, rider_id)
+    ip = (ws.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (
+        ws.client.host if ws.client else "unknown"
+    )
+    if not limiter.hit("ws", ip, LIMITS["ws"]):
+        await ws.close(code=CLOSE_RATE_LIMITED)
+        return
+    ride_id, refuse = await _authorize(ride_id, rider_id, token)
     if refuse is not None:
         await ws.close(code=refuse)
         return
     rider_id = str(uuid.UUID(rider_id))
+    last_update = 0.0
 
     await manager.connect(ride_id, rider_id, ws)
     try:
         await manager.broadcast_positions(ride_id)
         while True:
             raw = await ws.receive_text()
+            if len(raw) > MAX_MESSAGE_BYTES:
+                continue
             try:
                 msg = client_message_adapter.validate_json(raw)
             except ValidationError:
                 log.debug("ignoring invalid ws message from %s: %.200s", rider_id, raw)
                 continue
             if isinstance(msg, LocationUpdate):
+                now = time.monotonic()
+                if now - last_update < MIN_UPDATE_INTERVAL_S:
+                    continue
+                last_update = now
                 await on_location(ride_id, rider_id, msg)
             elif isinstance(msg, Heartbeat):
                 await on_heartbeat(rider_id)

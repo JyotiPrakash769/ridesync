@@ -36,13 +36,14 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="RideSync API", version="0.1.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if settings.cors_origin_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+        allow_headers=["Content-Type", "X-Rider-Id", "X-Rider-Token"],
+    )
 
 app.include_router(rides.router)
 app.include_router(join.router)

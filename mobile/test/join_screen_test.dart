@@ -71,5 +71,6 @@ void main() {
     expect(api.joins.single, ('K7Q2MX', 'Ravi'));
     final s = store.load()!;
     expect((s.rideId, s.riderId, s.isLeader, s.displayName), ('K7Q2MX', 'rider-9', false, 'Ravi'));
+    expect(s.riderToken, FakeApi.token);
   });
 }

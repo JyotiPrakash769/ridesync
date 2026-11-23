@@ -23,7 +23,7 @@ void main() {
   test('saved session is restored on start', () async {
     final store = await tempSessionStore();
     await store.save(const RideSession(
-        rideId: 'K7Q2MX', riderId: 'r', role: RiderRole.member, displayName: 'Ravi'));
+        rideId: 'K7Q2MX', riderId: 'r', riderToken: 't', role: RiderRole.member, displayName: 'Ravi'));
     final container = ProviderContainer(
       overrides: [sessionStoreProvider.overrideWithValue(store)],
     );

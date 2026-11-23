@@ -15,7 +15,9 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ridesync"
     RIDE_TTL_HOURS: int = 12
-    CORS_ORIGINS: str = "*"
+    # Comma-separated browser origins allowed to call the API. Empty = no CORS
+    # (the Android app does not need it). Use "*" only for local experiments.
+    CORS_ORIGINS: str = ""
 
     @field_validator("DATABASE_URL")
     @classmethod
@@ -29,6 +31,8 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
+        if not self.CORS_ORIGINS.strip():
+            return []
         if self.CORS_ORIGINS.strip() == "*":
             return ["*"]
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

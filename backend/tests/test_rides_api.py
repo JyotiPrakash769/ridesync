@@ -2,7 +2,7 @@ import re
 import uuid
 
 from app.services.ride_service import RIDE_ID_ALPHABET, derive_status, generate_ride_id
-from tests.conftest import exec_sql
+from tests.conftest import H, exec_sql
 
 ID_RE = re.compile(rf"^[{RIDE_ID_ALPHABET}]{{6}}$")
 
@@ -17,7 +17,8 @@ async def test_create_ride(client):
     assert body["qr_payload"] == f"https://ridesync.app/join/{body['ride_id']}"
     uuid.UUID(body["leader_rider_id"])
 
-    g = (await client.get(f"/rides/{body['ride_id']}")).json()
+    assert len(body["rider_token"]) >= 40
+    g = (await client.get(f"/rides/{body['ride_id']}", headers=H(body))).json()
     assert g["leader_rider_id"] == body["leader_rider_id"]
     assert [(x["name"], x["role"]) for x in g["riders"]] == [("Asha", "leader")]
 
@@ -36,7 +37,7 @@ def test_ride_id_alphabet_has_no_ambiguous_chars():
 # ---------- GET /rides/{id} ----------
 
 async def test_get_ride(client, ride):
-    r = await client.get(f"/rides/{ride['ride_id']}")
+    r = await client.get(f"/rides/{ride['ride_id']}", headers=H(ride))
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "active"
@@ -49,18 +50,18 @@ async def test_get_ride(client, ride):
 
 
 async def test_get_ride_is_case_insensitive(client, ride):
-    r = await client.get(f"/rides/{ride['ride_id'].lower()}")
+    r = await client.get(f"/rides/{ride['ride_id'].lower()}", headers=H(ride))
     assert r.status_code == 200
 
 
 async def test_get_missing_ride_404(client):
-    assert (await client.get("/rides/ZZZZZZ")).status_code == 404
+    assert (await client.get("/rides/ZZZZZZ", headers={"X-Rider-Id": str(uuid.uuid4())})).status_code == 404
 
 
 async def test_get_expired_ride_reads_as_ended(client, ride):
     await exec_sql("UPDATE rides SET expires_at = now() - interval '1 minute' WHERE id=:id",
                    id=ride["ride_id"])
-    assert (await client.get(f"/rides/{ride['ride_id']}")).json()["status"] == "ended"
+    assert (await client.get(f"/rides/{ride['ride_id']}", headers=H(ride))).json()["status"] == "ended"
 
 
 # ---------- POST /rides/{id}/join ----------
@@ -70,7 +71,7 @@ async def test_join_ride(client, ride):
     assert r.status_code == 201
     body = r.json()
     assert body["ride_id"] == ride["ride_id"]
-    riders = (await client.get(f"/rides/{ride['ride_id']}")).json()["riders"]
+    riders = (await client.get(f"/rides/{ride['ride_id']}", headers=H(ride))).json()["riders"]
     assert [(x["name"], x["role"]) for x in riders] == [("Asha", "leader"), ("Ravi", "member")]
 
 
@@ -80,7 +81,7 @@ async def test_join_missing_ride_404(client):
 
 
 async def test_join_ended_ride_410(client, ride):
-    await client.post(f"/rides/{ride['ride_id']}/end", json={"rider_id": ride["leader_rider_id"]})
+    await client.post(f"/rides/{ride['ride_id']}/end", json={"rider_id": ride["leader_rider_id"]}, headers=H(ride))
     r = await client.post(f"/rides/{ride['ride_id']}/join", json={"display_name": "Ravi"})
     assert r.status_code == 410
 
@@ -105,61 +106,73 @@ async def _join(client, ride_id, name="Ravi"):
 
 async def test_threshold_leader_can_set(client, ride):
     r = await client.patch(f"/rides/{ride['ride_id']}/threshold",
-                           json={"rider_id": ride["leader_rider_id"], "threshold_m": 300})
+                           json={"rider_id": ride["leader_rider_id"], "threshold_m": 300},
+                           headers=H(ride))
     assert r.status_code == 200
     assert r.json() == {"threshold_m": 300}
-    assert (await client.get(f"/rides/{ride['ride_id']}")).json()["threshold_m"] == 300
+    assert (await client.get(f"/rides/{ride['ride_id']}", headers=H(ride))).json()["threshold_m"] == 300
 
 
 async def test_threshold_member_forbidden(client, ride):
     member = await _join(client, ride["ride_id"])
     r = await client.patch(f"/rides/{ride['ride_id']}/threshold",
-                           json={"rider_id": member["rider_id"], "threshold_m": 300})
+                           json={"rider_id": member["rider_id"], "threshold_m": 300},
+                           headers=H(member))
     assert r.status_code == 403
 
 
-async def test_threshold_unknown_or_foreign_rider_forbidden(client, ride):
+async def test_threshold_unknown_or_foreign_rider(client, ride):
     other = (await client.post("/rides", json={"leader_name": "Other"})).json()
-    for rid in (str(uuid.uuid4()), other["leader_rider_id"]):
-        r = await client.patch(f"/rides/{ride['ride_id']}/threshold",
-                               json={"rider_id": rid, "threshold_m": 300})
-        assert r.status_code == 403
+    # unknown rider -> 401 (can't authenticate)
+    r = await client.patch(f"/rides/{ride['ride_id']}/threshold",
+                           json={"rider_id": str(uuid.uuid4()), "threshold_m": 300},
+                           headers={"X-Rider-Token": "nope"})
+    assert r.status_code == 401
+    # valid leader of ANOTHER ride -> 403
+    r = await client.patch(f"/rides/{ride['ride_id']}/threshold",
+                           json={"rider_id": other["leader_rider_id"], "threshold_m": 300},
+                           headers=H(other))
+    assert r.status_code == 403
 
 
 async def test_threshold_rejects_unsupported_value(client, ride):
     r = await client.patch(f"/rides/{ride['ride_id']}/threshold",
-                           json={"rider_id": ride["leader_rider_id"], "threshold_m": 250})
+                           json={"rider_id": ride["leader_rider_id"], "threshold_m": 250},
+                           headers=H(ride))
     assert r.status_code == 422
 
 
 async def test_threshold_404_and_410(client, ride):
     body = {"rider_id": ride["leader_rider_id"], "threshold_m": 300}
-    assert (await client.patch("/rides/ZZZZZZ/threshold", json=body)).status_code == 404
-    await client.post(f"/rides/{ride['ride_id']}/end", json={"rider_id": ride["leader_rider_id"]})
-    assert (await client.patch(f"/rides/{ride['ride_id']}/threshold", json=body)).status_code == 410
+    assert (await client.patch("/rides/ZZZZZZ/threshold", json=body, headers=H(ride))).status_code == 404
+    await client.post(f"/rides/{ride['ride_id']}/end", json={"rider_id": ride["leader_rider_id"]}, headers=H(ride))
+    assert (await client.patch(f"/rides/{ride['ride_id']}/threshold", json=body,
+                               headers=H(ride))).status_code == 410
 
 
 # ---------- POST /rides/{id}/end ----------
 
 async def test_end_ride_by_leader(client, ride):
-    r = await client.post(f"/rides/{ride['ride_id']}/end", json={"rider_id": ride["leader_rider_id"]})
+    r = await client.post(f"/rides/{ride['ride_id']}/end", json={"rider_id": ride["leader_rider_id"]}, headers=H(ride))
     assert r.status_code == 200
     assert r.json() == {"status": "ended"}
-    assert (await client.get(f"/rides/{ride['ride_id']}")).json()["status"] == "ended"
+    assert (await client.get(f"/rides/{ride['ride_id']}", headers=H(ride))).json()["status"] == "ended"
 
 
 async def test_end_ride_member_forbidden(client, ride):
     member = await _join(client, ride["ride_id"])
-    r = await client.post(f"/rides/{ride['ride_id']}/end", json={"rider_id": member["rider_id"]})
+    r = await client.post(f"/rides/{ride['ride_id']}/end", json={"rider_id": member["rider_id"]},
+                          headers=H(member))
     assert r.status_code == 403
-    assert (await client.get(f"/rides/{ride['ride_id']}")).json()["status"] == "active"
+    assert (await client.get(f"/rides/{ride['ride_id']}", headers=H(ride))).json()["status"] == "active"
 
 
 async def test_end_ride_404_and_twice_410(client, ride):
     body = {"rider_id": ride["leader_rider_id"]}
-    assert (await client.post("/rides/ZZZZZZ/end", json=body)).status_code == 404
-    assert (await client.post(f"/rides/{ride['ride_id']}/end", json=body)).status_code == 200
-    assert (await client.post(f"/rides/{ride['ride_id']}/end", json=body)).status_code == 410
+    h = H(ride)
+    assert (await client.post("/rides/ZZZZZZ/end", json=body, headers=h)).status_code == 404
+    assert (await client.post(f"/rides/{ride['ride_id']}/end", json=body, headers=h)).status_code == 200
+    assert (await client.post(f"/rides/{ride['ride_id']}/end", json=body, headers=h)).status_code == 410
 
 
 # ---------- expiry cleanup ----------
@@ -168,14 +181,15 @@ async def test_expiry_cleanup_marks_only_expired(client):
     from app.db.session import AsyncSessionLocal
     from app.tasks.expiry_cleanup import mark_expired_rides
 
-    a = (await client.post("/rides", json={"leader_name": "A"})).json()["ride_id"]
-    b = (await client.post("/rides", json={"leader_name": "B"})).json()["ride_id"]
+    ra = (await client.post("/rides", json={"leader_name": "A"})).json()
+    rb = (await client.post("/rides", json={"leader_name": "B"})).json()
+    a, b = ra["ride_id"], rb["ride_id"]
     await exec_sql("UPDATE rides SET expires_at = now() - interval '1 hour' WHERE id=:id", id=a)
     async with AsyncSessionLocal() as db:
         assert await mark_expired_rides(db) == [a]
         assert await mark_expired_rides(db) == []
-    assert (await client.get(f"/rides/{a}")).json()["status"] == "ended"
-    assert (await client.get(f"/rides/{b}")).json()["status"] == "active"
+    assert (await client.get(f"/rides/{a}", headers=H(ra))).json()["status"] == "ended"
+    assert (await client.get(f"/rides/{b}", headers=H(rb))).json()["status"] == "active"
 
 
 # ---------- status derivation ----------

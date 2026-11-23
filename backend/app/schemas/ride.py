@@ -19,6 +19,7 @@ class CreateRideOut(BaseModel):
     ride_id: str
     leader_rider_id: uuid.UUID
     qr_payload: str
+    rider_token: str  # secret; send as X-Rider-Token / ?token=
 
 
 class JoinRideIn(BaseModel):
@@ -28,6 +29,7 @@ class JoinRideIn(BaseModel):
 class JoinRideOut(BaseModel):
     rider_id: uuid.UUID
     ride_id: str
+    rider_token: str  # secret; send as X-Rider-Token / ?token=
 
 
 class RideOut(BaseModel):

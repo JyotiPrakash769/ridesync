@@ -39,4 +39,6 @@ client_message_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 CLOSE_RIDE_NOT_FOUND = 4404
 CLOSE_RIDE_ENDED = 4410
 CLOSE_NOT_A_RIDER = 4403
+CLOSE_UNAUTHORIZED = 4401  # missing / wrong rider token
+CLOSE_RATE_LIMITED = 4429  # too many connects from this IP; client may retry later
 CLOSE_LEFT = 1000

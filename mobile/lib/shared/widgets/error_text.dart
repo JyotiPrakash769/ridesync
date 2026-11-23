@@ -11,6 +11,8 @@ String apiErrorMessage(Object e, {String? rideId}) {
           : 'No ride with code $rideId. Check the code and try again.',
       ApiErrorKind.gone => 'This ride has ended.',
       ApiErrorKind.forbidden => 'Only the ride leader can do that.',
+      ApiErrorKind.unauthorized => 'Your ride session expired. Join the ride again.',
+      ApiErrorKind.rateLimited => 'Too many attempts. Wait a minute and try again.',
       ApiErrorKind.invalid => 'That doesn\'t look right. Check and try again.',
       ApiErrorKind.network => 'Can\'t reach RideSync. Check your connection.',
       ApiErrorKind.server => 'Something went wrong on our side. Try again.',

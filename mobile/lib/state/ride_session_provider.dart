@@ -29,6 +29,7 @@ class RideSessionNotifier extends Notifier<RideSession?> {
   Future<RideSession> adopt({
     required String rideId,
     required String riderId,
+    required String riderToken,
     required bool leader,
     required String displayName,
     bool activate = true,
@@ -36,6 +37,7 @@ class RideSessionNotifier extends Notifier<RideSession?> {
     final s = RideSession(
       rideId: rideId,
       riderId: riderId,
+      riderToken: riderToken,
       role: leader ? RiderRole.leader : RiderRole.member,
       displayName: displayName,
     );
@@ -58,8 +60,23 @@ class RideSessionNotifier extends Notifier<RideSession?> {
 
   /// POST /rides/{id}/join, then persist as member.
   Future<RideSession> joinRide(String rideId, String displayName) async {
-    final riderId = await ref.read(apiClientProvider).joinRide(rideId, displayName);
-    return adopt(rideId: rideId, riderId: riderId, leader: false, displayName: displayName);
+    final joined = await ref.read(apiClientProvider).joinRide(rideId, displayName);
+    return adopt(
+      rideId: rideId,
+      riderId: joined.riderId,
+      riderToken: joined.riderToken,
+      leader: false,
+      displayName: displayName,
+    );
+  }
+
+  /// Role changed on the server (leader handoff); keeps Hive in sync.
+  Future<void> updateRole(RiderRole role) async {
+    final s = state;
+    if (s == null || s.role == role) return;
+    final next = s.copyWith(role: role);
+    await ref.read(sessionStoreProvider).save(next);
+    state = next;
   }
 
   /// Forgets the ride locally (server-side end is a separate API call).

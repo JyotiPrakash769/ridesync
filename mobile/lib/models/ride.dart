@@ -32,9 +32,15 @@ class RideInfo {
 
 /// POST /rides response.
 class CreatedRide {
-  const CreatedRide({required this.rideId, required this.leaderRiderId, required this.qrPayload});
+  const CreatedRide({
+    required this.rideId,
+    required this.leaderRiderId,
+    required this.qrPayload,
+    required this.riderToken,
+  });
 
   final String rideId;
   final String leaderRiderId;
   final String qrPayload;
+  final String riderToken;
 }
