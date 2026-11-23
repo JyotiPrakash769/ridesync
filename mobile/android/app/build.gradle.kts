@@ -13,7 +13,8 @@ plugins {
 
 android {
     namespace = "app.ridesync.ridesync"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android requires compiling against API 37+ (targetSdk unchanged).
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
