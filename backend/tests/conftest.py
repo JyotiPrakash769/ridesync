@@ -17,6 +17,7 @@ TEST_DB_URL = os.environ.get(
 # Must be set before app modules import settings.
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["DB_NULL_POOL"] = "1"  # no pooled connections shared across event loops
+os.environ["DISABLE_BACKGROUND_TASKS"] = "1"
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -50,3 +51,18 @@ async def client():
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+async def exec_sql(sql: str, **params) -> None:
+    from app.db.session import engine
+
+    async with engine.begin() as conn:
+        await conn.execute(text(sql), params)
+
+
+@pytest.fixture
+async def ride(client):
+    """A fresh ride with its leader: dict(ride_id, leader_rider_id, qr_payload)."""
+    r = await client.post("/rides", json={"leader_name": "Asha"})
+    assert r.status_code == 201, r.text
+    return r.json()

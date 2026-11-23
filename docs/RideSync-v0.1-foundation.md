@@ -160,11 +160,17 @@ CREATE INDEX idx_riders_ride ON riders(ride_id);
 | Method | Path | Body | Response |
 |---|---|---|---|
 | POST | `/rides` | `{leader_name}` | `{ride_id, leader_rider_id, qr_payload}` |
-| GET | `/rides/{ride_id}` | — | `{status, threshold_m, riders: [...]}` |
+| GET | `/rides/{ride_id}` | — | `{ride_id, status, threshold_m, leader_rider_id, expires_at, riders: [...]}` |
 | POST | `/rides/{ride_id}/join` | `{display_name}` | `{rider_id, ride_id}` |
-| PATCH | `/rides/{ride_id}/threshold` | `{threshold_m}` (leader only) | `{threshold_m}` |
+| PATCH | `/rides/{ride_id}/threshold` | `{rider_id, threshold_m}` (leader only; threshold_m ∈ 100/300/500/1000) | `{threshold_m}` |
 | POST | `/rides/{ride_id}/sync` | `{rider_id, points: [{lat,lng,recorded_at}]}` | `{accepted: n}` |
 | POST | `/rides/{ride_id}/end` | `{rider_id}` (leader only) | `{status: "ended"}` |
+
+Each `riders[]` entry has the same shape as a `rider_positions` entry (§5).
+`ride_id` is case-insensitive on input. Errors: `404` ride doesn't exist, `410` ride ended or
+expired (checked against `expires_at` directly), `403` leader-only action by a non-leader,
+`422` validation. `rider_id` was added to the PATCH threshold body (v0.1 has no auth, so the
+leader is identified the same way as for `/end`).
 
 `qr_payload` = deep link, e.g. `https://ridesync.app/join/{ride_id}` (Android App Link) with a `ridesync://join/{ride_id}` custom-scheme fallback.
 
