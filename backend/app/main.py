@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import join, rides
+from app.api import join, rides, web
 from app.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.services.positions import positions_message
@@ -17,6 +17,12 @@ from app.ws import ride_socket
 from app.ws.connection_manager import manager
 
 settings = get_settings()
+
+if settings.SENTRY_DSN:
+    import sentry_sdk
+
+    # No request bodies / IPs / headers: rider tokens and positions must not leave the server.
+    sentry_sdk.init(dsn=settings.SENTRY_DSN, send_default_pii=False, traces_sample_rate=0.0)
 
 
 @asynccontextmanager
@@ -48,6 +54,7 @@ if settings.cors_origin_list:
 app.include_router(rides.router)
 app.include_router(join.router)
 app.include_router(ride_socket.router)
+app.include_router(web.router)
 
 
 @app.get("/health", tags=["meta"])

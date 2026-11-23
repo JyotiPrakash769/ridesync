@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="RideSync"
@@ -34,13 +35,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Join links: https://ridesync.app/join/{ride_id} (App Link; needs
-                 /.well-known/assetlinks.json on ridesync.app, see docs/assetlinks.json) -->
+            <!-- Join links: https://${JOIN_HOST}/join/{ride_id}. The backend serves the
+                 /join page and /.well-known/assetlinks.json (ANDROID_CERT_SHA256). -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https" android:host="ridesync.app" android:pathPrefix="/join/"/>
+                <data android:scheme="https" android:host="${JOIN_HOST}" android:pathPrefix="/join/"/>
             </intent-filter>
             <!-- Custom-scheme fallback: ridesync://join/{ride_id} -->
             <intent-filter>
@@ -71,6 +72,11 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- url_launcher: open the privacy policy / links in a browser -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

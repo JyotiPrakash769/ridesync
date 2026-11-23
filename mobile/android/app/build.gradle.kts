@@ -39,6 +39,10 @@ android {
         // or the MAPS_API_KEY env var (CI secret).
         manifestPlaceholders["MAPS_API_KEY"] =
             localProps.getProperty("MAPS_API_KEY") ?: System.getenv("MAPS_API_KEY") ?: ""
+        // https host of QR join links (the backend's /join page). Must match the
+        // app's JOIN_HOST dart-define (defaults to the API host).
+        manifestPlaceholders["JOIN_HOST"] =
+            localProps.getProperty("JOIN_HOST") ?: System.getenv("JOIN_HOST") ?: "ridesync.app"
     }
 
     // Release signing comes from env vars (set by CI from repo secrets, see

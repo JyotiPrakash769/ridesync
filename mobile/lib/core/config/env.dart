@@ -22,7 +22,20 @@ class Env {
   ///   --dart-define=MAP_PROVIDER=google
   static const String mapProvider = String.fromEnvironment('MAP_PROVIDER', defaultValue: 'osm');
 
-  /// Deep-link hosts/schemes used in QR payloads.
-  static const String joinLinkHost = 'ridesync.app';
+  /// https host of QR join links (`https://<host>/join/CODE`). Defaults to the
+  /// API host, which serves the /join landing page. Must match the
+  /// JOIN_HOST manifest placeholder for links to open the app directly.
+  static const String _joinHostOverride = String.fromEnvironment('JOIN_HOST');
+  static String get joinLinkHost =>
+      _joinHostOverride.isNotEmpty ? _joinHostOverride : Uri.parse(apiBaseUrl).host;
+
+  /// Hosts accepted for join links: the configured one plus the original.
+  static Set<String> get joinLinkHosts => {joinLinkHost, 'ridesync.app'};
   static const String joinLinkScheme = 'ridesync';
+
+  /// Privacy policy page served by the backend.
+  static String get privacyUrl => '$apiBaseUrl/privacy';
+
+  /// Optional Sentry DSN for crash reports (empty = disabled).
+  static const String sentryDsn = String.fromEnvironment('SENTRY_DSN');
 }

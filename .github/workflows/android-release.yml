@@ -36,6 +36,7 @@ jobs:
       API_BASE_URL: ${{ vars.API_BASE_URL || 'http://10.0.2.2:8000' }}
       WS_BASE_URL: ${{ vars.WS_BASE_URL || 'ws://10.0.2.2:8000' }}
       MAP_PROVIDER: ${{ vars.MAP_PROVIDER || 'osm' }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
       KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -66,6 +67,12 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           echo "SIGNING=release key" >> "$GITHUB_ENV"
 
+      - name: Join-link host (defaults to the API host)
+        run: |
+          host="${{ vars.JOIN_HOST }}"
+          if [ -z "$host" ]; then host="${API_BASE_URL#*://}"; host="${host%%/*}"; host="${host%%:*}"; fi
+          echo "JOIN_HOST=$host" >> "$GITHUB_ENV"
+
       - name: Build release APK
         run: >
           flutter build apk --release
@@ -74,6 +81,8 @@ jobs:
           --dart-define=API_BASE_URL="$API_BASE_URL"
           --dart-define=WS_BASE_URL="$WS_BASE_URL"
           --dart-define=MAP_PROVIDER="$MAP_PROVIDER"
+          --dart-define=JOIN_HOST="$JOIN_HOST"
+          --dart-define=SENTRY_DSN="$SENTRY_DSN"
 
       - name: Name artifact
         run: cp build/app/outputs/flutter-apk/app-release.apk "ridesync-$TAG.apk"

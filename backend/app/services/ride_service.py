@@ -169,9 +169,15 @@ async def end_ride(
     ride = await get_live_ride_or_raise(db, ride_id)
     await require_leader(db, ride, rider_id, token)
     ride.status = RIDE_ENDED
+    ride.ended_at = utcnow()
     await db.commit()
     return ride
 
 
 def qr_payload(ride_id: str) -> str:
+    """Join link in the QR. Points at this backend's /join page when
+    PUBLIC_BASE_URL is set (works without owning ridesync.app)."""
+    base = get_settings().PUBLIC_BASE_URL.rstrip("/")
+    if base:
+        return f"{base}/join/{ride_id}"
     return QR_LINK_TEMPLATE.format(ride_id=ride_id)

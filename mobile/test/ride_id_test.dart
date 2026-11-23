@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ridesync/core/config/env.dart';
 import 'package:ridesync/core/ride_id.dart';
 
 void main() {
@@ -17,6 +18,10 @@ void main() {
     test('https app link', () {
       expect(parseRideIdFromLink('https://ridesync.app/join/K7Q2MX'), 'K7Q2MX');
       expect(parseRideIdFromLink('https://ridesync.app/join/k7q2mx/'), 'K7Q2MX');
+    });
+    test('join page on the backend host (QR default)', () {
+      expect(parseRideIdFromLink('https://${Env.joinLinkHost}/join/K7Q2MX'), 'K7Q2MX');
+      expect(Env.joinLinkHost, Uri.parse(Env.apiBaseUrl).host);
     });
     test('custom scheme fallback', () {
       expect(parseRideIdFromLink('ridesync://join/K7Q2MX'), 'K7Q2MX');

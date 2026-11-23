@@ -14,13 +14,13 @@ String? normalizeRideId(String raw) {
 }
 
 /// Accepts a QR/deep-link payload or a bare ride ID:
-///   https://ridesync.app/join/ABC234, ridesync://join/ABC234, ABC234
+///   `https://<join host>/join/ABC234`, `ridesync://join/ABC234`, `ABC234`
 String? parseRideIdFromLink(String raw) {
   final text = raw.trim();
   final uri = Uri.tryParse(text);
   if (uri != null && uri.hasScheme) {
     final segs = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    if (uri.scheme == 'https' && uri.host == Env.joinLinkHost) {
+    if (uri.scheme == 'https' && Env.joinLinkHosts.contains(uri.host)) {
       if (segs.length == 2 && segs[0] == 'join') return normalizeRideId(segs[1]);
       return null;
     }

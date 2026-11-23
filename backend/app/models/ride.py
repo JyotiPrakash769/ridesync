@@ -38,6 +38,8 @@ class Ride(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # When the leader ended it or it expired; drives data retention.
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     riders: Mapped[list[Rider]] = relationship(
         "Rider",

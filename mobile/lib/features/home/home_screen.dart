@@ -1,4 +1,7 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../core/config/env.dart';
 
 import '../../shared/widgets/centered_form.dart';
 import '../ride_create/create_ride_screen.dart';
@@ -35,6 +38,11 @@ class HomeScreen extends StatelessWidget {
               .push(MaterialPageRoute<void>(builder: (_) => const JoinRideScreen())),
           icon: const Icon(Icons.qr_code_scanner),
           label: const Text('Join a ride'),
+        ),
+        const SizedBox(height: 24),
+        TextButton(
+          onPressed: () => launchUrl(Uri.parse(Env.privacyUrl), mode: LaunchMode.externalApplication),
+          child: const Text('Privacy policy'),
         ),
       ],
     );

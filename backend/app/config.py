@@ -15,6 +15,18 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ridesync"
     RIDE_TTL_HOURS: int = 12
+    # Ended rides (riders, locations, events) are deleted after this many days.
+    RETENTION_DAYS: int = 7
+    # Public URL of this backend, used for QR join links (https://host/join/CODE).
+    # Empty = the original https://ridesync.app/join/CODE.
+    PUBLIC_BASE_URL: str = ""
+    # Where the join page sends people who don't have the app yet.
+    APP_DOWNLOAD_URL: str = "https://github.com/JyotiPrakash769/ridesync/releases/latest"
+    # Comma-separated SHA-256 fingerprints of the APK signing cert(s); enables
+    # /.well-known/assetlinks.json so join links open the app directly.
+    ANDROID_CERT_SHA256: str = ""
+    # Optional error reporting (https://sentry.io). Empty = disabled.
+    SENTRY_DSN: str = ""
     # Comma-separated browser origins allowed to call the API. Empty = no CORS
     # (the Android app does not need it). Use "*" only for local experiments.
     CORS_ORIGINS: str = ""

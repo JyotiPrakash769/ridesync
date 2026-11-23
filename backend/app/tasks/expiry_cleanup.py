@@ -15,9 +15,12 @@ import asyncio
 import logging
 from datetime import datetime
 
-from sqlalchemy import update
+from datetime import timedelta
+
+from sqlalchemy import delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.ride import RIDE_ACTIVE, RIDE_ENDED, Ride
 from app.services.ride_service import utcnow
 
@@ -31,12 +34,28 @@ async def mark_expired_rides(db: AsyncSession, now: datetime | None = None) -> l
     result = await db.execute(
         update(Ride)
         .where(Ride.status == RIDE_ACTIVE, Ride.expires_at <= (now or utcnow()))
-        .values(status=RIDE_ENDED)
+        .values(status=RIDE_ENDED, ended_at=Ride.expires_at)
         .returning(Ride.id)
     )
     ended = [row[0] for row in result]
     await db.commit()
     return ended
+
+
+async def purge_old_rides(
+    db: AsyncSession, retention_days: int, now: datetime | None = None
+) -> int:
+    """Data retention: delete rides that ended more than `retention_days` ago.
+    Riders, locations and events go with them (ON DELETE CASCADE)."""
+    cutoff = (now or utcnow()) - timedelta(days=retention_days)
+    result = await db.execute(
+        delete(Ride).where(
+            Ride.status == RIDE_ENDED,
+            func.coalesce(Ride.ended_at, Ride.expires_at) < cutoff,
+        )
+    )
+    await db.commit()
+    return result.rowcount or 0
 
 
 async def run_forever(session_factory, on_ended=None) -> None:
@@ -45,6 +64,9 @@ async def run_forever(session_factory, on_ended=None) -> None:
         try:
             async with session_factory() as db:
                 ended = await mark_expired_rides(db)
+                purged = await purge_old_rides(db, get_settings().RETENTION_DAYS)
+            if purged:
+                log.info("retention: deleted %d old rides", purged)
             if ended:
                 log.info("expired rides ended: %s", ended)
                 if on_ended is not None:

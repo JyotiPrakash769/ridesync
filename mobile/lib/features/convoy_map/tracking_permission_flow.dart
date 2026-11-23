@@ -8,6 +8,7 @@ import '../../core/location/location_service.dart';
 import '../../core/storage/local_db.dart';
 
 const String _bgPromptedKey = 'bg_location_prompted';
+const String _batteryPromptedKey = 'battery_prompted';
 
 /// Two sequential location requests (fine, then background), each preceded
 /// by a plain-language explanation; then notifications for the tracking
@@ -65,6 +66,26 @@ Future<LocationAccess> runTrackingPermissionFlow(BuildContext context) async {
           action: 'Got it',
         );
       }
+    }
+  }
+
+  // Step 3: battery saver exemption. Xiaomi/Realme/Samsung battery savers
+  // otherwise kill background tracking. Asked once per install.
+  if (!await Permission.ignoreBatteryOptimizations.isGranted) {
+    final box = Hive.box<dynamic>(LocalDb.sessionBox);
+    if (box.get(_batteryPromptedKey) != true && context.mounted) {
+      final go = await _explain(
+        context,
+        icon: Icons.battery_saver,
+        title: 'Don\'t let the battery saver stop tracking',
+        body: 'Some phones pause apps in the background to save battery, and your group '
+            'would lose you. Allow RideSync to run without battery restrictions. '
+            'It only tracks while you\'re in a ride.',
+        action: 'Allow',
+        secondary: 'Not now',
+      );
+      await box.put(_batteryPromptedKey, true);
+      if (go) await Permission.ignoreBatteryOptimizations.request();
     }
   }
 
