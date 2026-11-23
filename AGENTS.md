@@ -25,7 +25,14 @@ WebSockets, Google Maps SDK, Railway deploy target. No auth in v0.1 — ride
 joined via ride ID / QR only.
 
 ## Design tokens
-Background #0B0D10, surface #12151A, accent #FFC72C, secondary text #8B929A,
-status: online #5DCAA5 / weak #EF9F27 / offline #E24B4A.
-Headers/labels: Oswald. Numeric display (distance/speed): monospace
-(JetBrains Mono).
+Material 3: `ColorScheme.fromSeed(#FFC72C)`, dark by default, light supported
+(mobile/lib/core/theme/app_theme.dart). Widgets use colorScheme/textTheme
+tokens only — no hex except the map style JSON and the status colors:
+online #5DCAA5 / weak #EF9F27 / offline #E24B4A (always paired with a label).
+M3 default type scale; `FontFeature.tabularFigures()` on distances, speeds,
+timers. 56 dp minimum touch targets. (Replaces the earlier Oswald /
+JetBrains Mono / fixed-surface tokens.)
+
+## Tooling notes
+In this Flutter version Material is imported from
+`package:material_ui/material_ui.dart`, not `flutter/material.dart`.
