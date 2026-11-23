@@ -1,0 +1,45 @@
+# --- mobile (Flutter) ---
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/.pub-cache/
+mobile/.pub/
+mobile/android/local.properties
+mobile/android/.gradle/
+mobile/android/app/debug/
+mobile/android/app/profile/
+mobile/android/app/release/
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/**/*.g.dart
+mobile/**/*.freezed.dart
+mobile/.idea/
+mobile/*.iml
+
+# --- backend (Python) ---
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.venv/
+backend/venv/
+backend/.env
+backend/*.db
+backend/.mypy_cache/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/*.egg-info/
+backend/dist/
+backend/build/
+
+# --- general ---
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+*.swp
+*.swo
+.env
+.venv/
+__pycache__/

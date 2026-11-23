@@ -1,0 +1,22 @@
+# Local Postgres for development and tests.
+#   docker compose up -d db
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ridesync
+    ports:
+      - "5432:5432"
+    volumes:
+      - ridesync_pg:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  ridesync_pg:
