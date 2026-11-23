@@ -18,18 +18,17 @@ void main() {
     expect(find.text('Join a ride'), findsOneWidget);
   });
 
-  testWidgets('saved session is restored on start', (tester) async {
-    final store = await tester.runAsync(() async {
-      final s = await tempSessionStore();
-      await s.save(const RideSession(
-          rideId: 'K7Q2MX', riderId: 'r', role: RiderRole.member, displayName: 'Ravi'));
-      return s;
-    });
-    await tester.pumpWidget(ProviderScope(
-      overrides: [sessionStoreProvider.overrideWithValue(store!)],
-      child: const RideSyncApp(),
-    ));
-    expect(find.text('Ride K7Q2MX'), findsOneWidget);
-    expect(find.text('Leave ride'), findsOneWidget);
+  // The map screen hosts a native GoogleMap view that can't render in a
+  // widget test, so restoration is checked at the provider level.
+  test('saved session is restored on start', () async {
+    final store = await tempSessionStore();
+    await store.save(const RideSession(
+        rideId: 'K7Q2MX', riderId: 'r', role: RiderRole.member, displayName: 'Ravi'));
+    final container = ProviderContainer(
+      overrides: [sessionStoreProvider.overrideWithValue(store)],
+    );
+    addTearDown(container.dispose);
+    final s = container.read(rideSessionProvider)!;
+    expect((s.rideId, s.riderId, s.isLeader), ('K7Q2MX', 'r', false));
   });
 }

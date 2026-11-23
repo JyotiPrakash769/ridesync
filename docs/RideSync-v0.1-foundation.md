@@ -186,6 +186,12 @@ leader is identified the same way as for `/end`).
 ```json
 {"type": "heartbeat"}
 ```
+```json
+{"type": "leave"}
+```
+`leave` (v0.1 addition) is sent by a member who taps "Leave ride": the server deletes the rider
+row and broadcasts `rider_left`. A dropped socket never removes or offlines a rider. The leader
+ends the ride via `POST /rides/{id}/end` instead.
 
 **Server → Client (broadcast to all riders in the room)**
 
@@ -212,6 +218,15 @@ leader is identified the same way as for `/end`).
 ```
 
 `status` is derived server-side from `last_seen_at` gap: `online` (<15s), `weak` (15–60s), `offline` (>60s) — maps to the green/yellow/red dot in the status list.
+
+`rider_positions` is broadcast on every `location_update`, when a rider connects, and every 5s
+per active room (so silent riders visibly go weak → offline). `last_seen_at` uses the server
+clock; the client `ts` is accepted but not trusted. `heartbeat` refreshes `last_seen_at` only.
+`rider_joined` is sent when `POST /join` succeeds; `ride_ended` when the leader ends the ride or
+it expires, followed by closing every socket in the room.
+
+Close codes (v0.1 addition): `4404` ride not found, `4410` ride ended/expired, `4403` rider not
+in this ride. Clients must not reconnect after these; any other close → reconnect with backoff.
 
 ---
 

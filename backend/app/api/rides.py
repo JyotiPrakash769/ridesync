@@ -16,6 +16,7 @@ from app.schemas.ride import (
 )
 from app.schemas.rider import RiderOut
 from app.services import ride_service as rs
+from app.ws.ride_socket import end_ride_rooms
 
 router = APIRouter(prefix="/rides", tags=["rides"])
 
@@ -67,5 +68,6 @@ async def set_threshold(
 
 @router.post("/{ride_id}/end", response_model=EndRideOut)
 async def end_ride(ride_id: str, body: EndRideIn, db: AsyncSession = Depends(get_db)) -> EndRideOut:
-    await rs.end_ride(db, ride_id, body.rider_id)
+    ride = await rs.end_ride(db, ride_id, body.rider_id)
+    await end_ride_rooms([ride.id])
     return EndRideOut(status="ended")

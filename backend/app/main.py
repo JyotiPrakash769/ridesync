@@ -11,16 +11,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import join, rides
 from app.config import get_settings
 from app.db.session import AsyncSessionLocal
+from app.services.positions import positions_message
 from app.tasks import expiry_cleanup
+from app.ws import ride_socket
+from app.ws.connection_manager import manager
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    manager.set_snapshot_fn(positions_message)
     task = None
     if os.environ.get("DISABLE_BACKGROUND_TASKS") != "1":
-        task = asyncio.create_task(expiry_cleanup.run_forever(AsyncSessionLocal))
+        task = asyncio.create_task(
+            expiry_cleanup.run_forever(AsyncSessionLocal, on_ended=ride_socket.end_ride_rooms)
+        )
     yield
     if task is not None:
         task.cancel()
@@ -40,6 +46,7 @@ app.add_middleware(
 
 app.include_router(rides.router)
 app.include_router(join.router)
+app.include_router(ride_socket.router)
 
 
 @app.get("/health", tags=["meta"])

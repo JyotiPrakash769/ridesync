@@ -21,6 +21,8 @@ from app.config import get_settings
 from app.models.ride import RIDE_ACTIVE, RIDE_ENDED, Ride
 from app.models.rider import ROLE_LEADER, ROLE_MEMBER, Rider
 
+__all__ = ["Ride", "Rider"]
+
 # RFC 4648 base32 (A-Z, 2-7) minus the ambiguous O, I, L. Base32 already has
 # no 0/1, so every 0/O and 1/I/L confusion is impossible.
 RIDE_ID_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ234567"
