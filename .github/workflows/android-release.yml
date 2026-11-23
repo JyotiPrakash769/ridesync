@@ -6,6 +6,9 @@ name: Android release APK
 # Optional repo settings (Settings > Secrets and variables > Actions):
 #   variables: API_BASE_URL, WS_BASE_URL  (e.g. https://x.up.railway.app / wss://...)
 #   secret:    MAPS_API_KEY               (Google Maps SDK for Android key)
+#   secrets:   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+#              ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#              (stable release signing; create with scripts/setup-release-signing.ps1)
 # Without them the APK targets the Android emulator's host (10.0.2.2:8000)
 # and the map renders blank.
 
@@ -32,6 +35,10 @@ jobs:
       API_BASE_URL: ${{ vars.API_BASE_URL || 'http://10.0.2.2:8000' }}
       WS_BASE_URL: ${{ vars.WS_BASE_URL || 'ws://10.0.2.2:8000' }}
       MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,9 +57,18 @@ jobs:
       - run: flutter analyze
       - run: flutter test
 
+      - name: Restore release keystore
+        if: env.KEYSTORE_B64 != ''
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "SIGNING=release key" >> "$GITHUB_ENV"
+
       - name: Build release APK
         run: >
           flutter build apk --release
+          --build-name="${TAG#v}"
+          --build-number="${{ github.run_number }}"
           --dart-define=API_BASE_URL="$API_BASE_URL"
           --dart-define=WS_BASE_URL="$WS_BASE_URL"
 
@@ -82,4 +98,5 @@ jobs:
               repo variables to your deployed backend (https/wss) and re-run.
             - The map needs a Google Maps key (`MAPS_API_KEY` repo secret);
               without it the map is blank, everything else works.
-            - Signed with the debug key (testing only).
+            - Signing: ${{ env.SIGNING || 'throwaway debug key (set the ANDROID_KEYSTORE_* secrets for a stable key)' }}.
+            - Maps key: ${{ env.MAPS_API_KEY != '' && 'included' || 'not set (map will be blank)' }}.
