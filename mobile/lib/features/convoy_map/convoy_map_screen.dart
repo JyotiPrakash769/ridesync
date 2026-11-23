@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/location/background_task.dart';
 import '../../core/location/location_service.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/ws_client.dart';
@@ -21,6 +22,7 @@ import '../alerts/threshold_selector.dart';
 import '../rider_status/rider_status_sheet.dart';
 import 'map_controller.dart';
 import 'rider_marker.dart';
+import 'tracking_permission_flow.dart';
 
 /// The map IS the screen: full-bleed, no app bar, floating chrome only.
 class ConvoyMapScreen extends ConsumerStatefulWidget {
@@ -47,10 +49,18 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
     rootBundle.loadString('assets/map_style_dark.json').then((s) {
       if (mounted) setState(() => _mapStyle = s);
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final access = await ref.read(convoyProvider.notifier).startLocation();
-      if (mounted) setState(() => _access = access);
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startTracking());
+  }
+
+  Future<void> _startTracking() async {
+    final access = await runTrackingPermissionFlow(context);
+    if (!mounted) return;
+    setState(() => _access = access);
+    if (access == LocationAccess.always || access == LocationAccess.foregroundOnly) {
+      final session = ref.read(rideSessionProvider);
+      if (session != null) await TrackingService.start(session.rideId);
+      ref.read(convoyProvider.notifier).startGps();
+    }
   }
 
   @override

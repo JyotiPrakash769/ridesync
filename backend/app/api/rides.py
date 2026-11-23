@@ -11,11 +11,14 @@ from app.schemas.ride import (
     EndRideIn,
     EndRideOut,
     RideOut,
+    SyncIn,
+    SyncOut,
     ThresholdIn,
     ThresholdOut,
 )
 from app.schemas.rider import RiderOut
 from app.services import ride_service as rs
+from app.services import sync_service
 from app.services.distance_service import tracker
 from app.ws.connection_manager import manager
 from app.ws.ride_socket import end_ride_rooms
@@ -75,3 +78,10 @@ async def end_ride(ride_id: str, body: EndRideIn, db: AsyncSession = Depends(get
     ride = await rs.end_ride(db, ride_id, body.rider_id)
     await end_ride_rooms([ride.id])
     return EndRideOut(status="ended")
+
+
+@router.post("/{ride_id}/sync", response_model=SyncOut)
+async def sync_points(ride_id: str, body: SyncIn, db: AsyncSession = Depends(get_db)) -> SyncOut:
+    accepted = await sync_service.ingest(db, ride_id, body.rider_id, body.points)
+    await manager.broadcast_positions(rs.normalize_ride_id(ride_id))
+    return SyncOut(accepted=accepted)

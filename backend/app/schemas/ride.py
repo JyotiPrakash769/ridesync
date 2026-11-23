@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, StringConstraints
+from pydantic import AwareDatetime, BaseModel, Field, StringConstraints
 
 from app.schemas.rider import RiderOut
 
@@ -59,3 +59,21 @@ class EndRideIn(BaseModel):
 
 class EndRideOut(BaseModel):
     status: Literal["ended"]
+
+
+MAX_SYNC_POINTS = 1000
+
+
+class SyncPoint(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    recorded_at: AwareDatetime  # client clock; must carry a timezone
+
+
+class SyncIn(BaseModel):
+    rider_id: uuid.UUID
+    points: list[SyncPoint] = Field(min_length=1, max_length=MAX_SYNC_POINTS)
+
+
+class SyncOut(BaseModel):
+    accepted: int

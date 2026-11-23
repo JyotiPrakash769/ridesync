@@ -166,6 +166,11 @@ CREATE INDEX idx_riders_ride ON riders(ride_id);
 | POST | `/rides/{ride_id}/sync` | `{rider_id, points: [{lat,lng,recorded_at}]}` | `{accepted: n}` |
 | POST | `/rides/{ride_id}/end` | `{rider_id}` (leader only) | `{status: "ended"}` |
 
+`/sync` accepts 1–1000 points with timezone-aware `recorded_at` (client clock; capped at server
+time). Points are appended to `locations`; the rider's live position moves to the newest point
+only if it is newer than the current `last_seen_at`. Errors as below; the app drops its queue on
+404/410/403 (those points can never be accepted) and keeps it on any other failure.
+
 Each `riders[]` entry has the same shape as a `rider_positions` entry (§5).
 `ride_id` is case-insensitive on input. Errors: `404` ride doesn't exist, `410` ride ended or
 expired (checked against `expires_at` directly), `403` leader-only action by a non-leader,

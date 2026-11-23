@@ -42,6 +42,7 @@ class WsClient {
   Timer? _retry;
   int _attempt = 0;
   bool _stopped = false;
+  bool _opening = false;
   WsConnState _state = WsConnState.closed;
   int? fatalCloseCode;
 
@@ -67,6 +68,14 @@ class WsClient {
     }
   }
 
+  /// Network came back (connectivity_plus): skip the remaining backoff wait.
+  void retryNow() {
+    if (_stopped || isConnected || _opening) return;
+    _retry?.cancel();
+    _attempt = 0;
+    _open();
+  }
+
   Future<void> stop() async {
     _stopped = true;
     _retry?.cancel();
@@ -89,16 +98,19 @@ class WsClient {
   }
 
   Future<void> _open() async {
-    if (_stopped) return;
+    if (_stopped || _opening) return;
+    _opening = true;
     _setState(_attempt == 0 ? WsConnState.connecting : WsConnState.reconnecting);
     final WebSocketChannel ch;
     try {
       ch = _connect(uri);
       await ch.ready;
     } catch (_) {
+      _opening = false;
       _scheduleReconnect();
       return;
     }
+    _opening = false;
     if (_stopped) {
       await ch.sink.close();
       return;

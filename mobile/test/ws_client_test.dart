@@ -119,4 +119,27 @@ void main() {
       client.stop();
     });
   });
+
+  test('retryNow skips the remaining backoff when the network returns', () {
+    fakeAsync((fa) {
+      var fail = true;
+      final attempts = <int>[];
+      final client = WsClient(uri: uri, connector: (_) {
+        attempts.add(fa.elapsed.inSeconds);
+        return FakeChannel(fail: fail);
+      });
+      client.start();
+      fa.elapse(const Duration(seconds: 4)); // attempts at 0, 1, 3; next due at 8
+      expect(attempts, [0, 1, 3]);
+      fail = false;
+      client.retryNow();
+      fa.flushMicrotasks();
+      expect(attempts, [0, 1, 3, 4]);
+      expect(client.isConnected, isTrue);
+      client.retryNow(); // no-op while connected
+      fa.flushMicrotasks();
+      expect(attempts, hasLength(4));
+      client.stop();
+    });
+  });
 }

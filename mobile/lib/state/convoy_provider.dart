@@ -1,11 +1,17 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import '../core/config/env.dart';
 import '../core/location/location_service.dart';
 import '../core/network/ws_client.dart';
+import '../core/storage/local_db.dart';
+import '../core/storage/location_queue.dart';
+import '../features/offline_sync/sync_manager.dart';
+import '../models/location_point.dart';
 import 'convoy_state.dart';
 import 'ride_session.dart';
 import 'ride_session_provider.dart';
@@ -19,6 +25,15 @@ final locationServiceProvider = Provider<LocationService>((ref) => LocationServi
 
 final wsConnectorProvider = Provider<WsConnector?>((ref) => null); // null = real socket
 
+final locationQueueProvider = Provider<LocationQueue>(
+  (ref) => LocationQueue(Hive.box<dynamic>(LocalDb.locationQueueBox)),
+);
+
+/// Emits when the device regains a network connection (null in tests).
+final connectivityProvider = Provider<Stream<List<ConnectivityResult>>?>(
+  (ref) => Connectivity().onConnectivityChanged,
+);
+
 Uri rideSocketUri(RideSession s) =>
     Uri.parse('${Env.wsBaseUrl}/ws/rides/${s.rideId}?rider_id=${s.riderId}');
 
@@ -28,6 +43,7 @@ final convoyProvider = NotifierProvider<ConvoyController, ConvoyState>(ConvoyCon
 /// changes; everything it starts is torn down in ref.onDispose.
 class ConvoyController extends Notifier<ConvoyState> {
   WsClient? _ws;
+  SyncManager? _sync;
   final List<StreamSubscription<dynamic>> _subs = [];
   Timer? _sendTimer;
   Position? _latest;
@@ -44,12 +60,28 @@ class ConvoyController extends Notifier<ConvoyState> {
 
     final ws = WsClient(uri: rideSocketUri(session), connector: ref.read(wsConnectorProvider));
     _ws = ws;
+    final api = ref.read(apiClientProvider);
+    final sync = SyncManager(
+      queue: ref.read(locationQueueProvider),
+      upload: (points) => api.syncPoints(session.rideId, session.riderId, points),
+    );
+    _sync = sync;
     _subs
       ..add(ws.messages.listen((m) => state = applyMessage(state, m)))
       ..add(ws.states.listen((c) {
         state = state.copyWith(conn: c, fatalCloseCode: ws.fatalCloseCode);
-        if (c == WsConnState.connected) _flush(force: true);
+        if (c == WsConnState.connected) {
+          // Reconnected: upload what was cached offline, then resume live sends.
+          unawaited(sync.flush());
+          _flush(force: true);
+        }
       }));
+    final connectivity = ref.read(connectivityProvider);
+    if (connectivity != null) {
+      _subs.add(connectivity.listen((results) {
+        if (results.any((r) => r != ConnectivityResult.none)) ws.retryNow();
+      }));
+    }
     ws.start();
     _sendTimer = Timer.periodic(sendInterval, (_) => _flush());
     unawaited(_loadInitial(session));
@@ -67,17 +99,16 @@ class ConvoyController extends Notifier<ConvoyState> {
     } catch (_) {/* the socket snapshot fills this in anyway */}
   }
 
-  /// Starts GPS once permission is granted (the screen asks the user).
-  Future<LocationAccess> startLocation() async {
-    final svc = ref.read(locationServiceProvider);
-    final access = await svc.ensureForegroundPermission();
-    if (access == LocationAccess.always || access == LocationAccess.foregroundOnly) {
-      _subs.add(svc.positions().listen((p) {
-        _latest = p;
-        _latestSent = false;
-      }));
-    }
-    return access;
+  bool _gpsStarted = false;
+
+  /// Starts the GPS stream. Call after the permission flow granted access.
+  void startGps() {
+    if (_gpsStarted || _ws == null) return;
+    _gpsStarted = true;
+    _subs.add(ref.read(locationServiceProvider).positions().listen((p) {
+      _latest = p;
+      _latestSent = false;
+    }));
   }
 
   void _flush({bool force = false}) {
@@ -96,6 +127,12 @@ class ConvoyController extends Notifier<ConvoyState> {
       if (ok) {
         _latestSent = true;
         _lastSend = now;
+      } else if (!_latestSent) {
+        // Couldn't send live: cache it for POST /sync on reconnect (once per fix).
+        _latestSent = true;
+        unawaited(_sync?.enqueue(
+          LocationPoint(lat: p.latitude, lng: p.longitude, recordedAt: p.timestamp.toUtc()),
+        ));
       }
       return;
     }
@@ -124,6 +161,8 @@ class ConvoyController extends Notifier<ConvoyState> {
       s.cancel();
     }
     _subs.clear();
+    _gpsStarted = false;
+    _sync = null;
     final ws = _ws;
     _ws = null;
     if (ws != null) unawaited(ws.dispose());
