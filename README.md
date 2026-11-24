@@ -81,6 +81,17 @@ plus a Maps key as below.
 > OSM tile servers are community-funded and meant for light use; before many riders use the
 > app, switch to Google Maps or a commercial OSM tile provider.
 
+### Trip planner + Google (two keys)
+
+The trip planner works without keys (OSM place search, straight-line "approximate" routes).
+For real road routes and Google search/map:
+
+1. **Server key** (Routes API + Places API (New), API-restricted): set on Railway as
+   `GOOGLE_MAPS_SERVER_KEY`. It never ships in the APK; the backend proxies requests and only
+   riders of a live ride can use it.
+2. **App key** (Maps SDK for Android): GitHub secret `MAPS_API_KEY`, then repo variable
+   `MAP_PROVIDER=google` and tag a release.
+
 ### Google Maps API key (only for MAP_PROVIDER=google)
 
 1. In Google Cloud Console enable **Maps SDK for Android** and create an API key (restrict it to

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -15,15 +16,23 @@ class RiderMarkerFactory {
   static const double _disc = 40; // logical px
   static const double _ring = 6;
 
-  Future<BitmapDescriptor> build({required String name, required bool leader}) async {
-    final key = '$name|$leader';
+  /// [headingDeg] is bucketed to 15° so the cache stays small.
+  Future<BitmapDescriptor> build({
+    required String name,
+    required bool leader,
+    bool isSelf = false,
+    double? headingDeg,
+    String youLabel = 'You',
+  }) async {
+    final bucket = headingDeg == null ? null : ((headingDeg / 15).round() * 15) % 360;
+    final key = '$name|$leader|$isSelf|$bucket';
     final cached = _cache[key];
     if (cached != null) return cached;
 
     final dpr = devicePixelRatio;
     final label = TextPainter(
       text: TextSpan(
-        text: name.length > 14 ? '${name.substring(0, 13)}…' : name,
+        text: isSelf ? youLabel : (name.length > 14 ? '${name.substring(0, 13)}…' : name),
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
@@ -52,8 +61,20 @@ class RiderMarkerFactory {
           ..strokeWidth = 3,
       );
     }
-    canvas.drawCircle(Offset(cx, cy), _disc / 2,
-        Paint()..color = leader ? scheme.primary : scheme.secondaryContainer);
+    final discColor =
+        isSelf ? scheme.tertiary : (leader ? scheme.primary : scheme.secondaryContainer);
+    if (bucket != null) {
+      // Heading arrow on the rim, pointing the way the rider is going.
+      final a = bucket * math.pi / 180;
+      final r = _disc / 2 + _ring + 1;
+      final tip = Offset(cx + r * math.sin(a), cy - r * math.cos(a));
+      final back = _disc / 2 - 2;
+      final left = Offset(cx + back * math.sin(a - 0.35), cy - back * math.cos(a - 0.35));
+      final right = Offset(cx + back * math.sin(a + 0.35), cy - back * math.cos(a + 0.35));
+      canvas.drawPath(Path()..moveTo(tip.dx, tip.dy)..lineTo(left.dx, left.dy)..lineTo(right.dx, right.dy)..close(),
+          Paint()..color = discColor);
+    }
+    canvas.drawCircle(Offset(cx, cy), _disc / 2, Paint()..color = discColor);
     canvas.drawCircle(
       Offset(cx, cy),
       _disc / 2,
@@ -64,7 +85,7 @@ class RiderMarkerFactory {
     );
 
     _paintIcon(canvas, Icons.two_wheeler, Offset(cx, cy), 22,
-        leader ? scheme.onPrimary : scheme.onSecondaryContainer);
+        isSelf ? scheme.onTertiary : (leader ? scheme.onPrimary : scheme.onSecondaryContainer));
 
     if (leader) {
       final badge = Offset(cx + _disc / 2 - 2, cy - _disc / 2 + 2);
@@ -82,7 +103,8 @@ class RiderMarkerFactory {
       ),
       const Radius.circular(10),
     );
-    canvas.drawRRect(pill, Paint()..color = scheme.surfaceContainerHigh);
+    canvas.drawRRect(
+        pill, Paint()..color = isSelf ? scheme.tertiaryContainer : scheme.surfaceContainerHigh);
     label.paint(canvas, Offset(cx - label.width / 2, pillTop + 3));
 
     final image = await recorder

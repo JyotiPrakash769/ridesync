@@ -31,15 +31,56 @@ class GoogleConvoyMap extends StatefulWidget {
   State<GoogleConvoyMap> createState() => _GoogleConvoyMapState();
 }
 
-class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapHandle {
+class _GoogleConvoyMapState extends State<GoogleConvoyMap>
+    with SingleTickerProviderStateMixin
+    implements ConvoyMapHandle {
   GoogleMapController? _map;
   String? _style;
   RiderMarkerFactory? _factory;
-  Set<Marker> _markers = {};
+  final Map<String, BitmapDescriptor> _icons = {};
+
+  // Markers glide to new positions like on the OSM map.
+  late final AnimationController _anim =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 900), value: 1)
+        ..addListener(() => setState(() {}));
+  final Map<String, LatLng> _from = {};
+  final Map<String, LatLng> _to = {};
+
+  LatLng? _displayed(String id) {
+    final a = _from[id], b = _to[id];
+    if (a == null || b == null) return b;
+    final t = Curves.easeInOut.transform(_anim.value);
+    return LatLng(a.latitude + (b.latitude - a.latitude) * t,
+        a.longitude + (b.longitude - a.longitude) * t);
+  }
+
+  void _retarget() {
+    var moved = false;
+    final ids = <String>{};
+    for (final r in widget.data.riders) {
+      if (!r.hasPosition) continue;
+      ids.add(r.id);
+      final target = LatLng(r.lat!, r.lng!);
+      final current = _displayed(r.id) ?? target;
+      if (_to[r.id] != target) moved = true;
+      _from[r.id] = current;
+      _to[r.id] = target;
+    }
+    _from.removeWhere((k, _) => !ids.contains(k));
+    _to.removeWhere((k, _) => !ids.contains(k));
+    if (moved) _anim.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
+    _retarget();
     rootBundle.loadString('assets/map_style_dark.json').then((s) {
       if (mounted) setState(() => _style = s);
     });
@@ -59,27 +100,48 @@ class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapH
   @override
   void didUpdateWidget(GoogleConvoyMap old) {
     super.didUpdateWidget(old);
-    if (!identical(old.data.riders, widget.data.riders)) unawaited(_rebuild());
+    if (!identical(old.data.riders, widget.data.riders)) {
+      _retarget();
+      unawaited(_rebuild());
+    }
   }
 
+  /// Renders (cached) marker bitmaps: name/You, leader ring, heading arrow.
   Future<void> _rebuild() async {
     final factory = _factory;
     if (factory == null) return;
-    final next = <Marker>{};
-    for (final r in widget.data.riders) {
+    final data = widget.data;
+    final next = <String, BitmapDescriptor>{};
+    for (final r in data.riders) {
       if (!r.hasPosition) continue;
-      next.add(Marker(
-        markerId: MarkerId(r.id),
-        position: LatLng(r.lat!, r.lng!),
-        icon: await factory.build(name: r.name, leader: r.isLeader),
-        anchor: RiderMarkerFactory.anchorFor(),
-        alpha: r.status == RiderStatus.offline ? 0.5 : 1,
-        zIndexInt: r.id == widget.data.selfId ? 3 : (r.isLeader ? 2 : 1),
-        infoWindow: InfoWindow(title: r.name),
-      ));
+      next[r.id] = await factory.build(
+        name: r.name,
+        leader: r.isLeader,
+        isSelf: r.id == data.selfId,
+        headingDeg: data.headingOf(r.id),
+        youLabel: data.youLabel,
+      );
     }
-    if (mounted) setState(() => _markers = next);
+    if (mounted) {
+      setState(() => _icons
+        ..clear()
+        ..addAll(next));
+    }
   }
+
+  Set<Marker> get _riderMarkers => {
+        for (final r in widget.data.riders)
+          if (r.hasPosition && _icons[r.id] != null)
+            Marker(
+              markerId: MarkerId(r.id),
+              position: _displayed(r.id) ?? LatLng(r.lat!, r.lng!),
+              icon: _icons[r.id]!,
+              anchor: RiderMarkerFactory.anchorFor(),
+              alpha: r.status == RiderStatus.offline ? 0.5 : 1,
+              zIndexInt: r.id == widget.data.selfId ? 3 : (r.isLeader ? 2 : 1),
+              infoWindow: InfoWindow(title: r.name),
+            ),
+      };
 
   @override
   void fitGroup(Iterable<Rider> riders) {
@@ -143,7 +205,7 @@ class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapH
       initialCameraPosition: const CameraPosition(target: ConvoyCamera.fallbackCenter, zoom: 13),
       style: Theme.of(context).brightness == Brightness.dark ? _style : null,
       markers: {
-        ..._markers,
+        ..._riderMarkers,
         if (plan != null) ...[
           Marker(
             markerId: const MarkerId('trip_origin'),
