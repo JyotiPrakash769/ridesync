@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import convoy, join, rides, web
+from app import logging_redact
 from app.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.services.positions import positions_message
@@ -17,16 +18,23 @@ from app.ws import ride_socket
 from app.ws.connection_manager import manager
 
 settings = get_settings()
+logging_redact.install()
 
 if settings.SENTRY_DSN:
     import sentry_sdk
 
     # No request bodies / IPs / headers: rider tokens and positions must not leave the server.
-    sentry_sdk.init(dsn=settings.SENTRY_DSN, send_default_pii=False, traces_sample_rate=0.0)
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        send_default_pii=False,
+        traces_sample_rate=0.0,
+        before_send=logging_redact.scrub_sentry_event,
+    )
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    logging_redact.install()  # again, after uvicorn has configured its handlers
     manager.set_snapshot_fn(positions_message)
     task = None
     if os.environ.get("DISABLE_BACKGROUND_TASKS") != "1":
