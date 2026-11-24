@@ -40,6 +40,7 @@ class RideOut(BaseModel):
     expires_at: datetime
     riders: list[RiderOut]
     regroup: dict | None = None  # {lat, lng, label, set_at} (v0.2)
+    plan: dict | None = None  # trip plan (v0.3), same shape as the trip_plan message
 
 
 ALLOWED_THRESHOLDS_M = (100, 300, 500, 1000)
@@ -96,3 +97,17 @@ class SetRegroupIn(BaseModel):
 class ChangeLeaderIn(BaseModel):
     rider_id: uuid.UUID  # caller
     new_leader_id: uuid.UUID
+
+
+class PlaceIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    label: Annotated[str, StringConstraints(strip_whitespace=True, max_length=60)] = ""
+
+
+class SetPlanIn(BaseModel):
+    rider_id: uuid.UUID
+    # null destination clears the plan; null origin = leader's live position
+    origin: PlaceIn | None = None
+    destination: PlaceIn | None
+    stops: list[PlaceIn] = Field(default_factory=list, max_length=5)

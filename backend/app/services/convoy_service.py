@@ -172,6 +172,8 @@ async def summary(db: AsyncSession, ride_id: str, rider_id: uuid.UUID, token: st
         "duration_s": max(0, int((end - ride.created_at).total_seconds())),
         "falling_behind_total": sum(behind_count.values()),
         "leader_changes": sum(1 for e in events if e.type == EVENT_LEADER_CHANGED),
+        "planned_distance_km": round(ride.plan["distance_m"] / 1000, 1) if ride.plan else None,
+        "destination": ride.plan["destination"]["label"] if ride.plan else None,
         "riders": [
             {
                 "rider_id": str(r.id),

@@ -321,3 +321,28 @@ New server→client messages:
 `GET /rides/{id}` also returns `regroup`. Schema: migration `0003` (`rides.ended_at`), `0004`
 (`rides.regroup_*`, `ride_events` log). One live position per rider every 30 s is stored in
 `locations` so the summary can measure distance. Ended rides are deleted after `RETENTION_DAYS`.
+
+## v0.3 additions: trip planner
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| PUT | `/rides/{id}/plan` | `{rider_id, origin?: {lat,lng,label}, destination: {…} \| null, stops: [≤5]}` (leader) | `{plan}` |
+| GET | `/rides/{id}/places?q=&lat=&lng=` | — (rider auth) | `{results: [{name,address,lat,lng}], provider}` |
+
+`origin` omitted = leader's live position; `destination: null` clears the plan. Routes come from
+Google Routes API (`TWO_WHEELER`, falling back to `DRIVE`) when `GOOGLE_MAPS_SERVER_KEY` is set,
+otherwise straight lines marked `approximate`. Place search uses Places API (New), else OSM
+Nominatim. The key never leaves the server; only riders of a live ride can use the proxy.
+
+Plan shape (`rides.plan` JSONB, migration `0005`; also in `GET /rides/{id}`):
+`{origin, destination, stops, polyline (Google encoded), distance_m, duration_s, legs:[{distance_m,
+duration_s}], provider, approximate, updated_at}`.
+
+New server→client messages:
+```json
+{"type": "trip_plan", "plan": {…} | null}
+{"type": "route_status", "rider_id": "...", "name": "Ravi", "off_route": true, "distance_m": 320}
+```
+`route_status` fires on transitions only: off when more than 250 m from the route, back on below
+150 m. Not evaluated for approximate plans. The summary adds `planned_distance_km` and
+`destination`.

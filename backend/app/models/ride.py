@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import CHAR, DateTime, Float, ForeignKey, Integer, String, func, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -45,6 +45,8 @@ class Ride(Base):
     regroup_lng: Mapped[float | None] = mapped_column(Float)
     regroup_label: Mapped[str | None] = mapped_column(String(40))
     regroup_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Trip plan (origin, destination, stops, encoded route); see trip_service.
+    plan: Mapped[dict | None] = mapped_column(JSONB)
 
     riders: Mapped[list[Rider]] = relationship(
         "Rider",

@@ -85,6 +85,7 @@ async def get_ride(
         expires_at=ride.expires_at,
         riders=[rider_out(r, now) for r in riders],
         regroup=convoy_service.regroup_payload(ride),
+        plan=ride.plan,
     )
 
 

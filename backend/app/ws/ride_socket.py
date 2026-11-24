@@ -31,6 +31,7 @@ from app.services import ride_service as rs
 from app.services.convoy_service import record_falling_behind
 from app.services.distance_service import tracker
 from app.services.positions import evaluate_alerts
+from app.services.trip_service import route_tracker
 from app.ws.connection_manager import manager
 
 log = logging.getLogger(__name__)
@@ -70,10 +71,16 @@ async def _authorize(ride_id: str, rider_id: str, token: str) -> tuple[str, int 
 
 
 async def on_location(ride_id: str, rider_id: str, msg: LocationUpdate) -> None:
+    route_msg = None
     async with AsyncSessionLocal() as db:
         rider = await db.get(Rider, uuid.UUID(rider_id))
         if rider is None:
             return
+        ride = await db.get(rs.Ride, ride_id)
+        if ride is not None and ride.plan:
+            route_msg = route_tracker.evaluate(
+                ride_id, ride.plan, rider_id, rider.display_name, msg.lat, msg.lng
+            )
         rider.last_lat = msg.lat
         rider.last_lng = msg.lng
         rider.last_speed_kph = msg.speed_kph
@@ -91,6 +98,8 @@ async def on_location(ride_id: str, rider_id: str, msg: LocationUpdate) -> None:
     await record_falling_behind(ride_id, alerts)  # persist first: sockets may drop mid-send
     for alert in alerts:
         await manager.broadcast(ride_id, alert)
+    if route_msg is not None:
+        await manager.broadcast(ride_id, route_msg)
 
 
 async def on_heartbeat(rider_id: str) -> None:
@@ -164,5 +173,6 @@ async def end_ride_rooms(ride_ids: list[str]) -> None:
     """Notify and close rooms for rides that ended (leader or expiry)."""
     for rid in ride_ids:
         tracker.reset(rid)
+        route_tracker.reset(rid)
         await manager.broadcast(rid, {"type": "ride_ended"})
         await manager.close_room(rid, CLOSE_RIDE_ENDED)

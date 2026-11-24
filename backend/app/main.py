@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import convoy, join, rides, web
+from app.api import convoy, join, rides, trip, web
 from app import logging_redact
 from app.config import get_settings
 from app.db.session import AsyncSessionLocal
@@ -62,6 +62,7 @@ if settings.cors_origin_list:
 app.include_router(rides.router)
 app.include_router(join.router)
 app.include_router(convoy.router)
+app.include_router(trip.router)
 app.include_router(ride_socket.router)
 app.include_router(web.router)
 

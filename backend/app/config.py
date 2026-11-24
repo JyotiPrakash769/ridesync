@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # Comma-separated SHA-256 fingerprints of the APK signing cert(s); enables
     # /.well-known/assetlinks.json so join links open the app directly.
     ANDROID_CERT_SHA256: str = ""
+    # Google Maps Platform server key (Routes API + Places API (New)). Stays on
+    # the server; the app never sees it. Empty = OSM place search + straight-
+    # line "approximate" routes.
+    GOOGLE_MAPS_SERVER_KEY: str = ""
+    # Contact for the OpenStreetMap Nominatim fallback (their usage policy).
+    NOMINATIM_USER_AGENT: str = "RideSync/0.3 (+https://github.com/JyotiPrakash769/ridesync)"
     # Optional error reporting (https://sentry.io). Empty = disabled.
     SENTRY_DSN: str = ""
     # Comma-separated browser origins allowed to call the API. Empty = no CORS
