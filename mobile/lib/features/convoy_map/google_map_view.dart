@@ -88,6 +88,22 @@ class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapH
   }
 
   @override
+  void fitPoints(List<(double, double)> points) {
+    if (points.length < 2) return;
+    var s = points.first.$1, n = s, w = points.first.$2, e = w;
+    for (final (la, ln) in points) {
+      if (la < s) s = la;
+      if (la > n) n = la;
+      if (ln < w) w = ln;
+      if (ln > e) e = ln;
+    }
+    unawaited(_map?.animateCamera(CameraUpdate.newLatLngBounds(
+      LatLngBounds(southwest: LatLng(s, w), northeast: LatLng(n, e)),
+      80,
+    )));
+  }
+
+  @override
   void focus(Rider r) {
     final u = ConvoyCamera.focus(r);
     if (u != null) unawaited(_map?.animateCamera(u));
@@ -98,8 +114,20 @@ class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapH
     final scheme = Theme.of(context).colorScheme;
     final data = widget.data;
     final regroup = data.regroup;
+    final plan = data.plan;
     return GoogleMap(
       polylines: {
+        if (plan != null && plan.route.length >= 2)
+          Polyline(
+            polylineId: const PolylineId('route'),
+            points: [for (final (la, ln) in plan.route) LatLng(la, ln)],
+            width: 7,
+            zIndex: 0,
+            color: scheme.primary.withValues(alpha: plan.approximate ? 0.45 : 0.85),
+            patterns: plan.approximate
+                ? [PatternItem.dash(20), PatternItem.gap(14)]
+                : const <PatternItem>[],
+          ),
         for (final r in data.riders)
           if ((data.trails[r.id]?.length ?? 0) >= 2)
             Polyline(
@@ -116,6 +144,27 @@ class _GoogleConvoyMapState extends State<GoogleConvoyMap> implements ConvoyMapH
       style: Theme.of(context).brightness == Brightness.dark ? _style : null,
       markers: {
         ..._markers,
+        if (plan != null) ...[
+          Marker(
+            markerId: const MarkerId('trip_origin'),
+            position: LatLng(plan.origin.lat, plan.origin.lng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            infoWindow: InfoWindow(title: plan.origin.label),
+          ),
+          for (var i = 0; i < plan.stops.length; i++)
+            Marker(
+              markerId: MarkerId('trip_stop_$i'),
+              position: LatLng(plan.stops[i].lat, plan.stops[i].lng),
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+              infoWindow: InfoWindow(title: 'Stop ${i + 1}', snippet: plan.stops[i].label),
+            ),
+          Marker(
+            markerId: const MarkerId('trip_destination'),
+            position: LatLng(plan.destination.lat, plan.destination.lng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+            infoWindow: InfoWindow(title: plan.destination.label),
+          ),
+        ],
         if (regroup != null)
           Marker(
             markerId: const MarkerId('regroup'),

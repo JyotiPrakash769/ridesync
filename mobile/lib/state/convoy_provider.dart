@@ -14,6 +14,7 @@ import '../core/storage/location_queue.dart';
 import '../features/offline_sync/sync_manager.dart';
 import '../models/location_point.dart';
 import '../models/rider.dart';
+import '../models/trip_plan.dart';
 import 'convoy_state.dart';
 import 'ride_session.dart';
 import 'ride_session_provider.dart';
@@ -113,6 +114,7 @@ class ConvoyController extends Notifier<ConvoyState> {
         riders: known,
         ended: !info.active,
         regroup: () => state.regroup ?? info.regroup,
+        plan: () => state.plan ?? info.plan,
       );
     } catch (_) {/* the socket snapshot fills this in anyway */}
   }
@@ -189,6 +191,16 @@ class ConvoyController extends Notifier<ConvoyState> {
     final s = ref.read(rideSessionProvider);
     if (s == null) return;
     await ref.read(apiClientProvider).setRegroup(s.rideId, s.auth);
+  }
+
+  /// Leader: plan (or with destination null, clear) the trip.
+  Future<void> setPlan({TripPlace? origin, TripPlace? destination, List<TripPlace> stops = const []}) async {
+    final s = ref.read(rideSessionProvider);
+    if (s == null) return;
+    final plan = await ref
+        .read(apiClientProvider)
+        .setPlan(s.rideId, s.auth, origin: origin, destination: destination, stops: stops);
+    state = state.copyWith(plan: () => plan, offRoute: const {});
   }
 
   /// Leader hands off; a member passes their own id to take over.

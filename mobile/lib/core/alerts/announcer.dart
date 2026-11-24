@@ -16,6 +16,11 @@ class AnnouncerStrings {
   String youLead() => 'You are now the ride leader.';
   String newLeader(String name) => '$name is now leading the ride.';
   String rideEnded() => 'The ride has ended.';
+  String offRoute(String name, int meters) => '$name is off the planned route, $meters meters.';
+  String youOffRoute() => 'You are off the planned route.';
+  String youBackOnRoute() => 'You are back on the route.';
+  String tripPlanned(String destination) =>
+      destination.isEmpty ? 'A trip has been planned.' : 'Trip planned to $destination.';
 }
 
 typedef SpeakFn = Future<void> Function(String text, String language);
@@ -57,6 +62,23 @@ class RideAnnouncer {
       case 'leader_changed':
         final id = msg['leader_rider_id'];
         say = id == selfId ? strings.youLead() : strings.newLeader(msg['name'] as String);
+        buzz = infoPattern;
+      case 'route_status':
+        final mine = msg['rider_id'] == selfId;
+        final off = msg['off_route'] == true;
+        if (mine) {
+          say = off ? strings.youOffRoute() : strings.youBackOnRoute();
+          buzz = off ? alertPattern : infoPattern;
+        } else if (isLeader && off) {
+          say = strings.offRoute(msg['name'] as String, (msg['distance_m'] as num).round());
+          buzz = alertPattern;
+        } else {
+          return null;
+        }
+      case 'trip_plan':
+        final p = msg['plan'];
+        if (p is! Map || isLeader) return null;
+        say = strings.tripPlanned(((p['destination'] as Map?)?['label'] as String?) ?? '');
         buzz = infoPattern;
       case 'ride_ended':
         say = strings.rideEnded();

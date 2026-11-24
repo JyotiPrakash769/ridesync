@@ -35,6 +35,18 @@ class FakeApi extends ApiClient {
   final String joinRiderId;
   final List<(String, String)> joins = [];
 
+  final List<String> searches = [];
+  List<PlaceResult> places = const [
+    PlaceResult(name: 'Puri Beach', address: 'Puri, Odisha', lat: 19.7984, lng: 85.8247),
+  ];
+
+  @override
+  Future<List<PlaceResult>> searchPlaces(String rideId, RiderAuth auth, String query,
+      {double? nearLat, double? nearLng}) async {
+    searches.add(query);
+    return places;
+  }
+
   @override
   Future<JoinedRide> joinRide(String rideId, String displayName) async {
     joins.add((rideId, displayName));

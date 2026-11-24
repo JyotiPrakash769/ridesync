@@ -22,8 +22,12 @@ class RideSummary {
     required this.duration,
     required this.fallingBehindTotal,
     required this.riders,
+    this.plannedDistanceKm,
+    this.destination,
   });
 
+  final double? plannedDistanceKm;
+  final String? destination;
   final Duration duration;
   final int fallingBehindTotal;
   final List<RiderSummary> riders;
@@ -31,6 +35,8 @@ class RideSummary {
   factory RideSummary.fromJson(Map<String, dynamic> j) => RideSummary(
         duration: Duration(seconds: (j['duration_s'] as num).toInt()),
         fallingBehindTotal: (j['falling_behind_total'] as num).toInt(),
+        plannedDistanceKm: (j['planned_distance_km'] as num?)?.toDouble(),
+        destination: j['destination'] as String?,
         riders: [
           for (final r in (j['riders'] as List).cast<Map<String, dynamic>>())
             RiderSummary(

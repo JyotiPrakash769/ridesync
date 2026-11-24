@@ -1,6 +1,7 @@
 import '../core/network/ws_client.dart';
 import '../models/rider.dart';
 import '../models/regroup_point.dart';
+import '../models/trip_plan.dart';
 import '../shared/geo.dart';
 
 export '../models/regroup_point.dart';
@@ -48,6 +49,8 @@ class ConvoyState {
     this.alerts = const {},
     this.trails = const {},
     this.regroup,
+    this.plan,
+    this.offRoute = const {},
   });
 
   final Map<String, Rider> riders;
@@ -58,6 +61,10 @@ class ConvoyState {
   final Map<String, DistanceAlert> alerts;
   final Map<String, List<TrailPoint>> trails;
   final RegroupPoint? regroup;
+  final TripPlan? plan;
+
+  /// Riders the server reports as off the planned route: id -> metres off.
+  final Map<String, int> offRoute;
 
   /// Direction of travel in degrees (0 = north), from the rider's last two
   /// trail points; null while they haven't moved enough to tell.
@@ -85,6 +92,8 @@ class ConvoyState {
     Map<String, DistanceAlert>? alerts,
     Map<String, List<TrailPoint>>? trails,
     RegroupPoint? Function()? regroup,
+    TripPlan? Function()? plan,
+    Map<String, int>? offRoute,
   }) =>
       ConvoyState(
         riders: riders ?? this.riders,
@@ -95,6 +104,8 @@ class ConvoyState {
         alerts: alerts ?? this.alerts,
         trails: trails ?? this.trails,
         regroup: regroup != null ? regroup() : this.regroup,
+        plan: plan != null ? plan() : this.plan,
+        offRoute: offRoute ?? this.offRoute,
       );
 }
 
@@ -145,9 +156,21 @@ ConvoyState applyMessage(ConvoyState s, Map<String, dynamic> msg) {
         riders: Map.of(s.riders)..remove(msg['rider_id']),
         alerts: Map.of(s.alerts)..remove(msg['rider_id']),
         trails: Map.of(s.trails)..remove(msg['rider_id']),
+        offRoute: Map.of(s.offRoute)..remove(msg['rider_id']),
       );
     case 'ride_ended':
       return s.copyWith(ended: true);
+    case 'trip_plan':
+      return s.copyWith(plan: () => TripPlan.fromJson(msg['plan']), offRoute: const {});
+    case 'route_status':
+      final id = msg['rider_id'] as String;
+      final next = Map.of(s.offRoute);
+      if (msg['off_route'] == true) {
+        next[id] = (msg['distance_m'] as num).round();
+      } else {
+        next.remove(id);
+      }
+      return s.copyWith(offRoute: next);
     case 'regroup_point':
       return s.copyWith(regroup: () => RegroupPoint.fromJson(msg['point']));
     case 'leader_changed':

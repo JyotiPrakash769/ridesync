@@ -12,7 +12,11 @@ class FloatingBar extends StatelessWidget {
     required this.onRecenter,
     this.statusOpen = false,
     this.thresholdChip,
+    this.onPlanTrip,
   });
+
+  /// Leader only: opens the trip planner.
+  final VoidCallback? onPlanTrip;
 
   final int riderCount;
   final VoidCallback onToggleStatus;
@@ -54,6 +58,12 @@ class FloatingBar extends StatelessWidget {
               ),
               const Spacer(),
               if (thresholdChip != null) ...[thresholdChip!, const SizedBox(width: 4)],
+              if (onPlanTrip != null)
+                IconButton(
+                  tooltip: 'Plan trip',
+                  onPressed: onPlanTrip,
+                  icon: const Icon(Icons.route),
+                ),
               IconButton(
                 tooltip: 'Center on group',
                 onPressed: onRecenter,

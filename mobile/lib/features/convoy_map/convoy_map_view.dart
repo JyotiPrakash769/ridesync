@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/config/env.dart';
 import '../../models/rider.dart';
+import '../../models/trip_plan.dart';
 import '../../state/convoy_state.dart';
 import 'google_map_view.dart';
 import 'osm_map_view.dart';
@@ -10,6 +11,9 @@ import 'osm_map_view.dart';
 abstract interface class ConvoyMapHandle {
   void fitGroup(Iterable<Rider> riders);
   void focus(Rider rider);
+
+  /// Frame arbitrary points (e.g. the whole planned route).
+  void fitPoints(List<(double, double)> points);
 }
 
 /// Everything a map implementation draws.
@@ -20,8 +24,12 @@ class ConvoyMapData {
     required this.selfId,
     required this.headingOf,
     this.regroup,
+    this.plan,
     this.youLabel = 'You',
   });
+
+  /// Planned trip: route line + stop/destination markers.
+  final TripPlan? plan;
 
   final List<Rider> riders;
   final Map<String, List<TrailPoint>> trails;

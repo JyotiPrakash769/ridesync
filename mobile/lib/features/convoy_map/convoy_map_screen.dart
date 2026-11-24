@@ -20,6 +20,10 @@ import '../../state/ride_session_provider.dart';
 import '../alerts/distance_alert_banner.dart';
 import '../alerts/threshold_selector.dart';
 import '../regroup/regroup_widgets.dart';
+import '../trip/trip_card.dart';
+import '../trip/trip_planner_screen.dart';
+import '../trip/trip_progress.dart';
+import '../../shared/widgets/alert_card.dart';
 import '../rider_status/rider_status_sheet.dart';
 import '../settings/settings_sheet.dart';
 import 'convoy_map_view.dart';
@@ -183,6 +187,16 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
       ) ??
       false;
 
+  Future<void> _openPlanner() async {
+    final convoy = ref.read(convoyProvider);
+    final me = convoy.riders[ref.read(rideSessionProvider)!.riderId];
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => TripPlannerScreen(initial: convoy.plan, nearLat: me?.lat, nearLng: me?.lng),
+    ));
+    final plan = ref.read(convoyProvider).plan;
+    if (plan != null) _map?.fitPoints(plan.route);
+  }
+
   void _toggleStatus() {
     setState(() => _statusOpen = !_statusOpen);
   }
@@ -228,6 +242,22 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
     final padding = MediaQuery.paddingOf(context);
     final barBottom = padding.bottom + AppTokens.sideMargin;
 
+    final me = convoy.riders[session.riderId];
+    final plan = convoy.plan;
+    final progress = plan != null && me != null && me.hasPosition
+        ? tripProgress(plan, me.lat!, me.lng!)
+        : null;
+    final myOffRoute = convoy.offRoute[session.riderId];
+    final othersOffRoute = {
+      for (final e in convoy.offRoute.entries)
+        if (e.key != session.riderId) e.key: e.value,
+    };
+    // Floating cards above the bar; camera fits keep riders clear of them.
+    final cardCount = (convoy.regroup != null ? 1 : 0) +
+        (session.isLeader && convoy.alerts.isNotEmpty ? 1 : 0) +
+        (session.isLeader && othersOffRoute.isNotEmpty ? 1 : 0) +
+        (myOffRoute != null ? 1 : 0);
+
     return Scaffold(
       body: Stack(
         children: [
@@ -239,13 +269,17 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                 selfId: session.riderId,
                 headingOf: convoy.headingOf,
                 regroup: convoy.regroup,
+                plan: convoy.plan,
               ),
               onLongPress: session.isLeader ? _setRegroupAt : null,
               showMyLocation:
                   _access == LocationAccess.always || _access == LocationAccess.foregroundOnly,
               padding: EdgeInsets.only(
-                top: padding.top + 56,
-                bottom: AppTokens.minTouch + barBottom + 8,
+                top: padding.top + 56 + (convoy.plan != null ? 64 : 0),
+                bottom: AppTokens.minTouch +
+                    barBottom +
+                    8 +
+                    (cardCount * (AppTokens.minTouch + 8 + AppTokens.gap)),
               ),
               onReady: (handle) {
                 _map = handle;
@@ -260,6 +294,16 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
             child: Center(
               child: Column(
                 children: [
+                  if (plan != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTokens.sideMargin),
+                      child: TripCard(
+                        plan: plan,
+                        progress: progress,
+                        onTap: () => _map?.fitPoints(plan.route),
+                      ),
+                    ),
+                  if (plan != null) const SizedBox(height: 8),
                   ConnectionChip(state: convoy.conn),
                   if (_access != null &&
                       _access != LocationAccess.always &&
@@ -295,6 +339,12 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         if (session.isLeader) ...[
+                          FilledButton.icon(
+                            onPressed: _openPlanner,
+                            icon: const Icon(Icons.route),
+                            label: Text(plan == null ? 'Plan trip' : 'Edit trip'),
+                          ),
+                          const SizedBox(height: 12),
                           FilledButton.tonalIcon(
                             onPressed: _regroupHere,
                             icon: const Icon(Icons.flag_circle),
@@ -351,6 +401,30 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                   ),
                   const SizedBox(height: AppTokens.gap),
                 ],
+                if (myOffRoute != null) ...[
+                  AlertCard(
+                    tone: AlertTone.tertiary,
+                    icon: Icons.wrong_location,
+                    title: "You're off the planned route",
+                    subtitle: '${formatDistance(myOffRoute.toDouble())} from the route · tap to show',
+                    onTap: plan == null ? null : () => _map?.fitPoints(plan.route),
+                  ),
+                  const SizedBox(height: AppTokens.gap),
+                ],
+                if (session.isLeader && othersOffRoute.isNotEmpty) ...[
+                  AlertCard(
+                    icon: Icons.alt_route,
+                    title: othersOffRoute.length == 1
+                        ? '${convoy.riders[othersOffRoute.keys.single]?.name ?? 'A rider'} is off the route'
+                        : '${othersOffRoute.length} riders off the route',
+                    subtitle: '${formatDistance(othersOffRoute.values.reduce((a, b) => a > b ? a : b).toDouble())}'
+                        ' away · tap to show',
+                    onTap: () => _showRider(othersOffRoute.entries
+                        .reduce((a, b) => a.value >= b.value ? a : b)
+                        .key),
+                  ),
+                  const SizedBox(height: AppTokens.gap),
+                ],
                 if (session.isLeader)
                   DistanceAlertBanner(
                     alerts: convoy.alerts,
@@ -372,6 +446,7 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
               thresholdChip: session.isLeader
                   ? ThresholdChip(thresholdM: convoy.thresholdM, onChanged: _setThreshold)
                   : null,
+              onPlanTrip: session.isLeader ? _openPlanner : null,
             ),
           ),
         ],
@@ -503,6 +578,12 @@ class _RideOverViewState extends ConsumerState<_RideOverView> {
                             '${s.fallingBehindTotal == 1 ? '' : 's'}',
                             style: text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
                           ),
+                          if (s.plannedDistanceKm != null)
+                            Text(
+                              'Planned: ${s.plannedDistanceKm!.toStringAsFixed(1)} km'
+                              '${s.destination != null && s.destination!.isNotEmpty ? ' to ${s.destination}' : ''}',
+                              style: text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+                            ),
                           const Divider(height: 24),
                           for (final r in s.riders)
                             ListTile(

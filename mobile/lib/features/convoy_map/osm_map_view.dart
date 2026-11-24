@@ -3,6 +3,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/rider.dart';
+import '../../models/trip_plan.dart';
 import 'convoy_map_view.dart';
 import 'map_geometry.dart';
 import 'rider_marker_widget.dart';
@@ -98,6 +99,16 @@ class _OsmConvoyMapState extends State<OsmConvoyMap>
   }
 
   @override
+  void fitPoints(List<(double, double)> points) {
+    if (points.length < 2) return;
+    _controller.fitCamera(CameraFit.coordinates(
+      coordinates: [for (final (la, ln) in points) LatLng(la, ln)],
+      padding: widget.padding + const EdgeInsets.all(40),
+      maxZoom: 16,
+    ));
+  }
+
+  @override
   void focus(Rider r) {
     if (r.hasPosition) _controller.move(LatLng(r.lat!, r.lng!), MapGeometry.focusZoom);
   }
@@ -142,6 +153,20 @@ class _OsmConvoyMapState extends State<OsmConvoyMap>
           tileBuilder: dark ? darkModeTileBuilder : null,
           maxZoom: 19,
         ),
+        if (data.plan != null && data.plan!.route.length >= 2)
+          PolylineLayer(polylines: [
+            Polyline(
+              points: [for (final (la, ln) in data.plan!.route) LatLng(la, ln)],
+              strokeWidth: 7,
+              color: scheme.primary.withValues(alpha: data.plan!.approximate ? 0.45 : 0.85),
+              borderStrokeWidth: 2,
+              borderColor: scheme.surface.withValues(alpha: 0.8),
+              pattern: data.plan!.approximate
+                  ? StrokePattern.dashed(segments: const [14, 10])
+                  : const StrokePattern.solid(),
+            ),
+          ]),
+        if (data.plan != null) MarkerLayer(markers: _tripMarkers(data.plan!, scheme)),
         PolylineLayer(
           polylines: [
             for (final r in ordered)
@@ -207,6 +232,45 @@ class _OsmConvoyMapState extends State<OsmConvoyMap>
     );
   }
 }
+
+List<Marker> _tripMarkers(TripPlan plan, ColorScheme scheme) => [
+      Marker(
+        point: LatLng(plan.origin.lat, plan.origin.lng),
+        width: 22,
+        height: 22,
+        child: Container(
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            shape: BoxShape.circle,
+            border: Border.all(color: scheme.primary, width: 4),
+          ),
+        ),
+      ),
+      for (var i = 0; i < plan.stops.length; i++)
+        Marker(
+          point: LatLng(plan.stops[i].lat, plan.stops[i].lng),
+          width: 30,
+          height: 30,
+          child: Semantics(
+            label: 'Stop ${i + 1}: ${plan.stops[i].label}',
+            child: CircleAvatar(
+              backgroundColor: scheme.secondary,
+              child: Text('${i + 1}',
+                  style: TextStyle(color: scheme.onSecondary, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ),
+      Marker(
+        point: LatLng(plan.destination.lat, plan.destination.lng),
+        width: 44,
+        height: 44,
+        alignment: const Alignment(0.4, -0.8),
+        child: Semantics(
+          label: 'Destination: ${plan.destination.label}',
+          child: Icon(Icons.sports_score, size: 40, color: scheme.primary),
+        ),
+      ),
+    ];
 
 class _RegroupPin extends StatelessWidget {
   const _RegroupPin({required this.label});

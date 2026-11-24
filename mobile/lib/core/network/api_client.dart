@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/ride.dart';
 import '../../models/ride_summary.dart';
+import '../../models/trip_plan.dart';
 import '../config/env.dart';
 
 enum ApiErrorKind { notFound, gone, forbidden, unauthorized, invalid, rateLimited, network, server }
@@ -14,6 +15,16 @@ class RiderAuth {
   final String token;
 
   Map<String, String> get headers => {'X-Rider-Id': riderId, 'X-Rider-Token': token};
+}
+
+/// One place-search hit.
+class PlaceResult {
+  const PlaceResult({required this.name, required this.address, required this.lat, required this.lng});
+
+  final String name;
+  final String address;
+  final double lat;
+  final double lng;
 }
 
 /// POST /rides/{id}/join response.
@@ -120,6 +131,45 @@ class ApiClient {
           data: {'rider_id': auth.riderId, 'new_leader_id': newLeaderId},
           options: Options(headers: auth.headers),
         ));
+  }
+
+  /// Leader only. [origin] null = server uses the leader's live position;
+  /// [destination] null clears the plan.
+  Future<TripPlan?> setPlan(String rideId, RiderAuth auth,
+      {TripPlace? origin, TripPlace? destination, List<TripPlace> stops = const []}) async {
+    final j = await _send(() => _dio.put(
+          '/rides/$rideId/plan',
+          data: {
+            'rider_id': auth.riderId,
+            'origin': origin?.toJson(),
+            'destination': destination?.toJson(),
+            'stops': [for (final s in stops) s.toJson()],
+          },
+          options: Options(headers: auth.headers),
+        ));
+    return TripPlan.fromJson(j['plan']);
+  }
+
+  /// Place search for the planner (Google via the backend; OSM fallback).
+  Future<List<PlaceResult>> searchPlaces(String rideId, RiderAuth auth, String query,
+      {double? nearLat, double? nearLng}) async {
+    final j = await _send(() => _dio.get(
+          '/rides/$rideId/places',
+          queryParameters: {
+            'q': query,
+            if (nearLat != null && nearLng != null) ...{'lat': nearLat, 'lng': nearLng},
+          },
+          options: Options(headers: auth.headers),
+        ));
+    return [
+      for (final r in (j['results'] as List).cast<Map<String, dynamic>>())
+        PlaceResult(
+          name: r['name'] as String,
+          address: (r['address'] as String?) ?? '',
+          lat: (r['lat'] as num).toDouble(),
+          lng: (r['lng'] as num).toDouble(),
+        ),
+    ];
   }
 
   Future<RideSummary> getSummary(String rideId, RiderAuth auth) async => RideSummary.fromJson(
