@@ -19,6 +19,14 @@ class AnnouncerStrings {
   String offRoute(String name, int meters) => '$name is off the planned route, $meters meters.';
   String youOffRoute() => 'You are off the planned route.';
   String youBackOnRoute() => 'You are back on the route.';
+  String quick(String name, String code, bool fromLeader) {
+    final text = quickMessageText(code);
+    return fromLeader ? 'Leader: $text.' : '$name: $text.';
+  }
+
+  String stopped(String name) => '$name has stopped.';
+  String arrived(String name) => '$name has arrived.';
+  String lowBattery(String name, int pct) => '$name\'s phone battery is at $pct percent.';
   String tripPlanned(String destination) =>
       destination.isEmpty ? 'A trip has been planned.' : 'Trip planned to $destination.';
 }
@@ -75,6 +83,22 @@ class RideAnnouncer {
         } else {
           return null;
         }
+      case 'quick_message':
+        if (msg['rider_id'] == selfId) return null;
+        say = strings.quick(msg['name'] as String, msg['code'] as String, msg['role'] == 'leader');
+        buzz = msg['code'] == 'help' ? alertPattern : infoPattern;
+      case 'rider_stopped':
+        if (!isLeader || msg['rider_id'] == selfId) return null;
+        say = strings.stopped(msg['name'] as String);
+        buzz = alertPattern;
+      case 'rider_arrived':
+        if (!isLeader || msg['rider_id'] == selfId) return null;
+        say = strings.arrived(msg['name'] as String);
+        buzz = infoPattern;
+      case 'low_battery': // synthesised by the app from rider_positions
+        if (!isLeader || msg['rider_id'] == selfId) return null;
+        say = strings.lowBattery(msg['name'] as String, (msg['battery'] as num).toInt());
+        buzz = infoPattern;
       case 'trip_plan':
         final p = msg['plan'];
         if (p is! Map || isLeader) return null;
@@ -107,3 +131,22 @@ class RideAnnouncer {
     } catch (_) {}
   }
 }
+
+/// Quick message codes -> text (same codes as the server allows).
+const Map<String, String> quickMessages = {
+  'slow_down': 'Slow down',
+  'speed_up': 'Speed up',
+  'stop_next_fuel': 'Stop at the next fuel station',
+  'regroup': 'Regroup',
+  'lets_go': "Let's go",
+  'stopping': 'Stopping',
+  'need_fuel': 'I need fuel',
+  'help': 'I need help',
+  'all_good': 'All good',
+  'on_my_way': 'On my way',
+};
+
+const List<String> leaderQuickCodes = ['slow_down', 'speed_up', 'stop_next_fuel', 'regroup', 'lets_go'];
+const List<String> riderQuickCodes = ['stopping', 'need_fuel', 'help', 'all_good', 'on_my_way'];
+
+String quickMessageText(String code) => quickMessages[code] ?? code;

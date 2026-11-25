@@ -22,7 +22,12 @@ import '../alerts/threshold_selector.dart';
 import '../regroup/regroup_widgets.dart';
 import '../trip/trip_card.dart';
 import '../trip/trip_planner_screen.dart';
+import '../trip/navigation_launcher.dart';
+import '../trip/trip_assist.dart';
 import '../trip/trip_progress.dart';
+import '../assist/assist_logic.dart';
+import '../assist/assist_widgets.dart';
+import '../../models/trip_plan.dart';
 import '../../shared/widgets/alert_card.dart';
 import '../rider_status/rider_status_sheet.dart';
 import '../settings/settings_sheet.dart';
@@ -44,6 +49,15 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
   bool _busy = false;
   LocationAccess? _access;
   final _sheet = DraggableScrollableController();
+  final _regroupHint = RegroupHint();
+  bool _hintDismissed = false;
+  Timer? _quickTimer;
+
+  @override
+  void dispose() {
+    _quickTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -96,6 +110,76 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
       }
     }
+  }
+
+  /// Leader long-press: destination / stop / regroup at that point.
+  Future<void> _mapMenu(double lat, double lng) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              minTileHeight: AppTokens.minTouch,
+              leading: const Icon(Icons.flag),
+              title: const Text('Set as destination'),
+              onTap: () => Navigator.pop(context, 'dest'),
+            ),
+            ListTile(
+              minTileHeight: AppTokens.minTouch,
+              leading: const Icon(Icons.add_location_alt),
+              title: const Text('Add as a stop'),
+              onTap: () => Navigator.pop(context, 'stop'),
+            ),
+            ListTile(
+              minTileHeight: AppTokens.minTouch,
+              leading: const Icon(Icons.flag_circle),
+              title: const Text('Regroup here'),
+              onTap: () => Navigator.pop(context, 'regroup'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    final point = TripPlace(lat: lat, lng: lng, label: 'Map point');
+    if (choice == 'regroup') return _setRegroupAt(lat, lng);
+    await _openPlanner(
+      setDestination: choice == 'dest' ? point : null,
+      addStop: choice == 'stop' ? point : null,
+    );
+  }
+
+  /// Leader left the route on purpose: recompute from here, keeping the
+  /// destination and the stops still ahead.
+  Future<void> _rerouteFromHere() async {
+    final convoy = ref.read(convoyProvider);
+    final plan = convoy.plan;
+    final me = convoy.riders[ref.read(rideSessionProvider)!.riderId];
+    if (plan == null || me == null || !me.hasPosition) return;
+    await _guard(() => ref.read(convoyProvider.notifier).setPlanWithOptions(
+          destination: plan.destination,
+          stops: stopsAhead(plan, me.lat!, me.lng!),
+          options: PlanOptions(
+            avoidTolls: plan.avoidTolls,
+            avoidHighways: plan.avoidHighways,
+            departureAt: plan.departureAt,
+            fuelRangeKm: plan.fuelRangeKm,
+          ),
+        ));
+  }
+
+  Future<void> _sendQuick() async {
+    final session = ref.read(rideSessionProvider)!;
+    final code = await showQuickMessageSheet(context, isLeader: session.isLeader);
+    if (code == null || !mounted) return;
+    final sent = ref.read(convoyProvider.notifier).sendQuick(code);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(sent ? 'Sent' : 'Not connected — try again in a moment'),
+      duration: const Duration(seconds: 2),
+    ));
   }
 
   Future<void> _setRegroupAt(double lat, double lng) async {
@@ -153,11 +237,23 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
               title: Text('Make ${r.name} the leader'),
               onTap: () => Navigator.pop(context, 'lead'),
             ),
+            ListTile(
+              minTileHeight: AppTokens.minTouch,
+              leading: const Icon(Icons.shield_outlined),
+              title: Text(ref.read(convoyProvider).sweepId == r.id
+                  ? 'Remove ${r.name} as sweep'
+                  : 'Make ${r.name} the sweep (rides last)'),
+              onTap: () => Navigator.pop(context, 'sweep'),
+            ),
           ],
         ),
       ),
     );
     if (action == 'show') _showRider(r.id);
+    if (action == 'sweep') {
+      final current = ref.read(convoyProvider).sweepId;
+      await _guard(() => ref.read(convoyProvider.notifier).setSweep(current == r.id ? null : r.id));
+    }
     if (action == 'lead' && mounted) {
       final ok = await _confirm('Make ${r.name} the leader?',
           'They get the alerts and controls. You become a regular rider.', 'Make leader');
@@ -187,11 +283,17 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
       ) ??
       false;
 
-  Future<void> _openPlanner() async {
+  Future<void> _openPlanner({TripPlace? setDestination, TripPlace? addStop}) async {
     final convoy = ref.read(convoyProvider);
     final me = convoy.riders[ref.read(rideSessionProvider)!.riderId];
     await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => TripPlannerScreen(initial: convoy.plan, nearLat: me?.lat, nearLng: me?.lng),
+      builder: (_) => TripPlannerScreen(
+        initial: convoy.plan,
+        nearLat: me?.lat,
+        nearLng: me?.lng,
+        setDestination: setDestination,
+        addStop: addStop,
+      ),
     ));
     final plan = ref.read(convoyProvider).plan;
     if (plan != null) _map?.fitPoints(plan.route);
@@ -248,12 +350,34 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
         ? tripProgress(plan, me.lat!, me.lng!)
         : null;
     final myOffRoute = convoy.offRoute[session.riderId];
+    final spread = groupSpread(convoy.riders.values, sweepId: convoy.sweepId);
+    final showHint = session.isLeader &&
+        !_hintDismissed &&
+        _regroupHint.update(spread, convoy.thresholdM, DateTime.now().toUtc()) &&
+        convoy.regroup == null;
+    final stoppedOthers = {
+      for (final e in convoy.stopped.entries)
+        if (e.key != session.riderId && convoy.riders[e.key] != null) e.key: e.value,
+    };
+    final quick = convoy.lastQuick;
+    final showQuick = quick != null &&
+        quick.riderId != session.riderId &&
+        DateTime.now().toUtc().difference(quick.at) < const Duration(seconds: 6);
+    if (showQuick) {
+      _quickTimer?.cancel();
+      _quickTimer = Timer(const Duration(seconds: 6), () {
+        if (mounted) setState(() {});
+      });
+    }
+    final weatherWarning = convoy.weather.where((w) => w.warning != null).firstOrNull;
     final othersOffRoute = {
       for (final e in convoy.offRoute.entries)
         if (e.key != session.riderId) e.key: e.value,
     };
     // Floating cards above the bar; camera fits keep riders clear of them.
-    final cardCount = (convoy.regroup != null ? 1 : 0) +
+    final cardCount = (showHint ? 1 : 0) +
+        (session.isLeader && stoppedOthers.isNotEmpty ? 1 : 0) +
+        (convoy.regroup != null ? 1 : 0) +
         (session.isLeader && convoy.alerts.isNotEmpty ? 1 : 0) +
         (session.isLeader && othersOffRoute.isNotEmpty ? 1 : 0) +
         (myOffRoute != null ? 1 : 0);
@@ -271,7 +395,7 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                 regroup: convoy.regroup,
                 plan: convoy.plan,
               ),
-              onLongPress: session.isLeader ? _setRegroupAt : null,
+              onLongPress: session.isLeader ? _mapMenu : null,
               showMyLocation:
                   _access == LocationAccess.always || _access == LocationAccess.foregroundOnly,
               padding: EdgeInsets.only(
@@ -301,9 +425,38 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                         plan: plan,
                         progress: progress,
                         onTap: () => _map?.fitPoints(plan.route),
+                        onNavigate: () => navigateWithGoogleMaps(
+                            navigationTarget(plan, progress?.nextStop)),
+                        onEdit: session.isLeader ? _openPlanner : null,
+                        weatherWarning: weatherWarning == null
+                            ? null
+                            : '${weatherWarning.warning} at '
+                                '${weatherWarning.label.isEmpty ? 'destination' : weatherWarning.label}'
+                                ' ~${formatClock(weatherWarning.eta)}',
                       ),
                     ),
                   if (plan != null) const SizedBox(height: 8),
+                  if (session.isLeader && spread != null && convoy.riders.length > 1) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTokens.sideMargin),
+                      child: LeaderAssistCard(
+                        spread: spread,
+                        riders: convoy.riders,
+                        thresholdM: convoy.thresholdM,
+                        sweepId: convoy.sweepId,
+                        arrived: convoy.arrived,
+                        hasPlan: plan != null,
+                        onTapLast: spread.lastRiderId == null
+                            ? null
+                            : () => _showRider(spread.lastRiderId!),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (showQuick) ...[
+                    QuickMessageCard(msg: quick),
+                    const SizedBox(height: 8),
+                  ],
                   ConnectionChip(state: convoy.conn),
                   if (_access != null &&
                       _access != LocationAccess.always &&
@@ -333,6 +486,10 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                   scrollController: scroll,
                   selfId: session.riderId,
                   onRiderTap: _riderActions,
+                  sweepId: convoy.sweepId,
+                  regroup: convoy.regroup,
+                  arrived: convoy.arrived,
+                  stopped: convoy.stopped,
                   footer: Padding(
                     padding: EdgeInsets.only(bottom: AppTokens.minTouch + barBottom),
                     child: Column(
@@ -401,13 +558,53 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                   ),
                   const SizedBox(height: AppTokens.gap),
                 ],
+                if (showHint) ...[
+                  AlertCard(
+                    tone: AlertTone.tertiary,
+                    icon: Icons.groups,
+                    title: 'Group spread out (${formatDistance(spread!.spreadM)})',
+                    subtitle: progress?.nextStop != null
+                        ? 'Tap to regroup at ${progress!.nextStop!.label.isEmpty ? 'the next stop' : progress.nextStop!.label}'
+                        : 'Tap to regroup at your location',
+                    onTap: () {
+                      final next = progress?.nextStop;
+                      if (next != null) {
+                        _guard(() => ref
+                            .read(convoyProvider.notifier)
+                            .setRegroup(next.lat, next.lng, next.label));
+                      } else {
+                        _regroupHere();
+                      }
+                    },
+                    onDismiss: () => setState(() => _hintDismissed = true),
+                  ),
+                  const SizedBox(height: AppTokens.gap),
+                ],
+                if (session.isLeader && stoppedOthers.isNotEmpty) ...[
+                  AlertCard(
+                    icon: Icons.car_crash_outlined,
+                    title: stoppedOthers.length == 1
+                        ? '${convoy.riders[stoppedOthers.keys.single]!.name} has stopped'
+                        : '${stoppedOthers.length} riders have stopped',
+                    subtitle: 'for ${formatAgo(stoppedOthers.values.first.since, DateTime.now().toUtc()).replaceAll(' ago', '')}'
+                        ' · tap to show',
+                    onTap: () => _showRider(stoppedOthers.keys.first),
+                  ),
+                  const SizedBox(height: AppTokens.gap),
+                ],
                 if (myOffRoute != null) ...[
                   AlertCard(
                     tone: AlertTone.tertiary,
                     icon: Icons.wrong_location,
                     title: "You're off the planned route",
-                    subtitle: '${formatDistance(myOffRoute.toDouble())} from the route · tap to show',
-                    onTap: plan == null ? null : () => _map?.fitPoints(plan.route),
+                    subtitle: session.isLeader
+                        ? '${formatDistance(myOffRoute.toDouble())} away · tap to update the route from here'
+                        : '${formatDistance(myOffRoute.toDouble())} from the route · tap to show',
+                    onTap: plan == null
+                        ? null
+                        : session.isLeader
+                            ? _rerouteFromHere
+                            : () => _map?.fitPoints(plan.route),
                   ),
                   const SizedBox(height: AppTokens.gap),
                 ],
@@ -446,7 +643,7 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
               thresholdChip: session.isLeader
                   ? ThresholdChip(thresholdM: convoy.thresholdM, onChanged: _setThreshold)
                   : null,
-              onPlanTrip: session.isLeader ? _openPlanner : null,
+              onQuickMessage: _sendQuick,
             ),
           ),
         ],

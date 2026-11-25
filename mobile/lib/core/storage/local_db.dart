@@ -7,12 +7,14 @@ abstract final class LocalDb {
   static const String sessionBox = 'session';
   static const String locationQueueBox = 'location_queue';
   static const String settingsBox = 'settings';
+  static const String savedTripsBox = 'saved_trips';
 
   static Future<void> init() async {
     await Hive.initFlutter('ridesync');
     await Hive.openBox<dynamic>(sessionBox);
     await Hive.openBox<dynamic>(locationQueueBox);
     await Hive.openBox<dynamic>(settingsBox);
+    await Hive.openBox<dynamic>(savedTripsBox);
   }
 }
 

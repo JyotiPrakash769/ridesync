@@ -5,6 +5,9 @@ import '../../core/theme/app_theme.dart';
 import '../../models/rider.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets/status_dot.dart';
+import '../../state/convoy_state.dart';
+import '../assist/assist_logic.dart';
+import '../trip/trip_progress.dart';
 
 /// Ticks once a second so "Updated 12s ago" stays current.
 final clockProvider = StreamProvider<DateTime>(
@@ -20,7 +23,16 @@ class RiderStatusSheet extends ConsumerWidget {
     required this.selfId,
     required this.onRiderTap,
     required this.footer,
+    this.sweepId,
+    this.regroup,
+    this.arrived = const {},
+    this.stopped = const {},
   });
+
+  final String? sweepId;
+  final RegroupPoint? regroup;
+  final Set<String> arrived;
+  final Map<String, StoppedRider> stopped;
 
   final List<Rider> riders;
   final ScrollController scrollController;
@@ -77,12 +89,27 @@ class RiderStatusSheet extends ConsumerWidget {
                   const SizedBox(width: 8),
                   Text('Leader', style: text.labelSmall?.copyWith(color: scheme.primary)),
                 ],
+                if (r.id == sweepId) ...[
+                  const SizedBox(width: 8),
+                  Text('Sweep', style: text.labelSmall?.copyWith(color: scheme.tertiary)),
+                ],
+                if (arrived.contains(r.id)) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.sports_score, size: 16, color: scheme.primary),
+                ],
               ],
             ),
             subtitle: Text(
-              [leaderGapLabel(r, leader), speedLabel(r), lastUpdateLabel(r, now)]
-                  .whereType<String>()
-                  .join(' · '),
+              [
+                if (stopped[r.id] != null)
+                  'Stopped ${formatAgo(stopped[r.id]!.since, now).replaceAll(' ago', '')}',
+                leaderGapLabel(r, leader),
+                speedLabel(r),
+                if (regroup != null && r.hasPosition && !arrived.contains(r.id))
+                  'regroup ~${formatDuration(etaSeconds(r, regroup!.lat, regroup!.lng))}',
+                if (r.battery != null && r.battery! <= 30) 'battery ${r.battery}%',
+                lastUpdateLabel(r, now),
+              ].whereType<String>().join(' · '),
               style: text.bodySmall?.copyWith(fontFeatures: tabularFigures),
             ),
             trailing: StatusDot(status: r.status),

@@ -18,6 +18,13 @@ Monorepo: `mobile/` (Flutter), `backend/` (FastAPI), `docs/` (contracts & design
 - **Alerts:** leader-only falling-behind alerts (100/300/500/1000 m) with spoken + vibration
   alerts; regroup point (long-press map or "Regroup at my location"); leader handoff and
   takeover after the leader has been offline 4+ minutes; ride summary at the end.
+- **Trip planner (v0.3–0.4):** start, destination, up to 5 reorderable stops, place search,
+  departure time with arrival estimate (plan up to 7 days ahead), saved trips, break and
+  fuel-range warnings, weather at each stop, route options (compare up to 3, avoid tolls /
+  highways, best stop order), pick on map, re-route from here, Navigate with Google Maps.
+- **Leader assist (v0.4):** group spread and last rider, sweep (tail) rider, regroup
+  suggestion when the group spreads out, stopped-rider alerts, regroup ETAs, quick messages,
+  low-battery warnings, arrival check-in.
 - **On the road:** foreground-service tracking with the screen off, battery-saver exemption,
   auto-reconnect, offline cache + sync, handlebar (sunlight) mode, dark/light/phone theme.
 - **Security & privacy:** per-rider secret tokens on every call, rate limits, ride data only

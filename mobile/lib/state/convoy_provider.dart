@@ -6,8 +6,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../core/alerts/announcer.dart';
+import '../core/battery.dart';
 import '../core/config/env.dart';
 import '../core/location/location_service.dart';
+import '../core/network/api_client.dart';
 import '../core/network/ws_client.dart';
 import '../core/storage/local_db.dart';
 import '../core/storage/location_queue.dart';
@@ -28,6 +30,11 @@ const Duration heartbeatInterval = Duration(seconds: 10);
 final locationServiceProvider = Provider<LocationService>((ref) => LocationService());
 
 final announcerProvider = Provider<RideAnnouncer>((ref) => RideAnnouncer());
+
+final batteryReaderProvider = Provider<BatteryReader>((ref) => const BatteryReader());
+
+/// Low-battery warning threshold (leader hears it once per crossing).
+const int lowBatteryPct = 15;
 
 /// Localised announcer phrases; replaced by the l10n layer.
 final announcerStringsProvider = Provider<AnnouncerStrings>((ref) => const AnnouncerStrings());
@@ -60,6 +67,10 @@ class ConvoyController extends Notifier<ConvoyState> {
   Position? _latest;
   bool _latestSent = true;
   DateTime _lastSend = DateTime.fromMillisecondsSinceEpoch(0);
+  int? _battery;
+  DateTime _batteryAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _weatherTimer;
+  final Set<String> _lowBatteryWarned = {};
 
   WsClient? get socket => _ws;
 
@@ -79,8 +90,11 @@ class ConvoyController extends Notifier<ConvoyState> {
     _sync = sync;
     _subs
       ..add(ws.messages.listen((m) {
+        final before = state;
         state = applyMessage(state, m);
         _onEvent(m);
+        if (m['type'] == 'rider_positions') _checkBatteries(before);
+        if (m['type'] == 'trip_plan') unawaited(refreshWeather());
       }))
       ..add(ws.states.listen((c) {
         state = state.copyWith(conn: c, fatalCloseCode: ws.fatalCloseCode);
@@ -98,6 +112,7 @@ class ConvoyController extends Notifier<ConvoyState> {
     }
     ws.start();
     _sendTimer = Timer.periodic(sendInterval, (_) => _flush());
+    _weatherTimer = Timer.periodic(const Duration(minutes: 30), (_) => refreshWeather());
     unawaited(_loadInitial(session));
     return const ConvoyState();
   }
@@ -115,7 +130,10 @@ class ConvoyController extends Notifier<ConvoyState> {
         ended: !info.active,
         regroup: () => state.regroup ?? info.regroup,
         plan: () => state.plan ?? info.plan,
+        sweepId: () => state.sweepId ?? info.sweepId,
+        arrived: {...info.arrived, ...state.arrived},
       );
+      if (state.plan != null) unawaited(refreshWeather());
     } catch (_) {/* the socket snapshot fills this in anyway */}
   }
 
@@ -136,6 +154,10 @@ class ConvoyController extends Notifier<ConvoyState> {
     if (ws == null) return;
     final now = DateTime.now();
     final p = _latest;
+    if (now.difference(_batteryAt) > const Duration(minutes: 2)) {
+      _batteryAt = now;
+      unawaited(ref.read(batteryReaderProvider).level().then((b) => _battery = b));
+    }
     if (p != null && (!_latestSent || force)) {
       final ok = ws.send({
         'type': 'location_update',
@@ -143,6 +165,7 @@ class ConvoyController extends Notifier<ConvoyState> {
         'lng': p.longitude,
         'speed_kph': p.speed >= 0 ? p.speed * 3.6 : null,
         'ts': p.timestamp.toUtc().toIso8601String(),
+        if (_battery != null) 'battery': _battery,
       });
       if (ok) {
         _latestSent = true;
@@ -203,6 +226,55 @@ class ConvoyController extends Notifier<ConvoyState> {
     state = state.copyWith(plan: () => plan, offRoute: const {});
   }
 
+  /// Leader: plan with route options (avoid tolls/highways, alternative,
+  /// departure time, fuel range).
+  Future<void> setPlanWithOptions({
+    TripPlace? origin,
+    required TripPlace destination,
+    List<TripPlace> stops = const [],
+    PlanOptions options = const PlanOptions(),
+  }) async {
+    final s = ref.read(rideSessionProvider);
+    if (s == null) return;
+    final plan = await ref.read(apiClientProvider).setPlan(s.rideId, s.auth,
+        origin: origin, destination: destination, stops: stops, options: options);
+    state = state.copyWith(plan: () => plan, offRoute: const {}, arrived: const {});
+    unawaited(refreshWeather());
+  }
+
+  Future<void> refreshWeather() async {
+    final s = ref.read(rideSessionProvider);
+    if (s == null || state.plan == null) return;
+    try {
+      final w = await ref.read(apiClientProvider).getWeather(s.rideId, s.auth);
+      state = state.copyWith(weather: w);
+    } catch (_) {/* weather is a nice-to-have */}
+  }
+
+  Future<void> setSweep(String? riderId) async {
+    final s = ref.read(rideSessionProvider);
+    if (s == null) return;
+    await ref.read(apiClientProvider).setSweep(s.rideId, s.auth, riderId);
+    state = state.copyWith(sweepId: () => riderId);
+  }
+
+  /// One-tap message to the ride (codes in announcer.dart).
+  bool sendQuick(String code) => _ws?.send({'type': 'quick_message', 'code': code}) ?? false;
+
+  /// Leader hears once when a rider's battery drops to lowBatteryPct or below.
+  void _checkBatteries(ConvoyState before) {
+    for (final r in state.riders.values) {
+      final b = r.battery;
+      if (b == null) continue;
+      if (b > lowBatteryPct + 5) _lowBatteryWarned.remove(r.id);
+      final prev = before.riders[r.id]?.battery;
+      if (b <= lowBatteryPct && !_lowBatteryWarned.contains(r.id) && (prev == null || prev > lowBatteryPct || prev == b)) {
+        _lowBatteryWarned.add(r.id);
+        _onEvent({'type': 'low_battery', 'rider_id': r.id, 'name': r.name, 'battery': b});
+      }
+    }
+  }
+
   /// Leader hands off; a member passes their own id to take over.
   Future<void> changeLeader(String newLeaderId) async {
     final s = ref.read(rideSessionProvider);
@@ -236,6 +308,7 @@ class ConvoyController extends Notifier<ConvoyState> {
 
   void _teardown() {
     _sendTimer?.cancel();
+    _weatherTimer?.cancel();
     for (final s in _subs) {
       s.cancel();
     }

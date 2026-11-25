@@ -12,11 +12,11 @@ class FloatingBar extends StatelessWidget {
     required this.onRecenter,
     this.statusOpen = false,
     this.thresholdChip,
-    this.onPlanTrip,
+    this.onQuickMessage,
   });
 
-  /// Leader only: opens the trip planner.
-  final VoidCallback? onPlanTrip;
+  /// One-tap messages to the ride.
+  final VoidCallback? onQuickMessage;
 
   final int riderCount;
   final VoidCallback onToggleStatus;
@@ -58,11 +58,11 @@ class FloatingBar extends StatelessWidget {
               ),
               const Spacer(),
               if (thresholdChip != null) ...[thresholdChip!, const SizedBox(width: 4)],
-              if (onPlanTrip != null)
+              if (onQuickMessage != null)
                 IconButton(
-                  tooltip: 'Plan trip',
-                  onPressed: onPlanTrip,
-                  icon: const Icon(Icons.route),
+                  tooltip: 'Quick message',
+                  onPressed: onQuickMessage,
+                  icon: const Icon(Icons.chat_bubble_outline),
                 ),
               IconButton(
                 tooltip: 'Center on group',

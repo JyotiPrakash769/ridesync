@@ -75,6 +75,11 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- url_launcher: Google Maps turn-by-turn ("Navigate") -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="google.navigation"/>
+        </intent>
         <!-- url_launcher: open the privacy policy / links in a browser -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>

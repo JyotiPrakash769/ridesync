@@ -17,6 +17,32 @@ class DistanceAlert {
   DistanceAlert withDistance(int d) => DistanceAlert(riderId: riderId, name: name, distanceM: d);
 }
 
+/// A rider who hasn't moved for a while (rider_stopped).
+class StoppedRider {
+  const StoppedRider({required this.since, required this.lat, required this.lng});
+
+  final DateTime since;
+  final double lat;
+  final double lng;
+}
+
+/// Last quick message ("Leader: Slow down").
+class QuickMsg {
+  const QuickMsg({
+    required this.riderId,
+    required this.name,
+    required this.code,
+    required this.fromLeader,
+    required this.at,
+  });
+
+  final String riderId;
+  final String name;
+  final String code;
+  final bool fromLeader;
+  final DateTime at;
+}
+
 /// One point of a rider's recent path (drawn as a faint trail).
 class TrailPoint {
   const TrailPoint(this.lat, this.lng, this.at);
@@ -51,7 +77,18 @@ class ConvoyState {
     this.regroup,
     this.plan,
     this.offRoute = const {},
+    this.stopped = const {},
+    this.arrived = const {},
+    this.sweepId,
+    this.lastQuick,
+    this.weather = const [],
   });
+
+  final Map<String, StoppedRider> stopped;
+  final Set<String> arrived;
+  final String? sweepId;
+  final QuickMsg? lastQuick;
+  final List<WeatherPoint> weather;
 
   final Map<String, Rider> riders;
   final int thresholdM;
@@ -94,6 +131,11 @@ class ConvoyState {
     RegroupPoint? Function()? regroup,
     TripPlan? Function()? plan,
     Map<String, int>? offRoute,
+    Map<String, StoppedRider>? stopped,
+    Set<String>? arrived,
+    String? Function()? sweepId,
+    QuickMsg? Function()? lastQuick,
+    List<WeatherPoint>? weather,
   }) =>
       ConvoyState(
         riders: riders ?? this.riders,
@@ -106,6 +148,11 @@ class ConvoyState {
         regroup: regroup != null ? regroup() : this.regroup,
         plan: plan != null ? plan() : this.plan,
         offRoute: offRoute ?? this.offRoute,
+        stopped: stopped ?? this.stopped,
+        arrived: arrived ?? this.arrived,
+        sweepId: sweepId != null ? sweepId() : this.sweepId,
+        lastQuick: lastQuick != null ? lastQuick() : this.lastQuick,
+        weather: weather ?? this.weather,
       );
 }
 
@@ -157,11 +204,42 @@ ConvoyState applyMessage(ConvoyState s, Map<String, dynamic> msg) {
         alerts: Map.of(s.alerts)..remove(msg['rider_id']),
         trails: Map.of(s.trails)..remove(msg['rider_id']),
         offRoute: Map.of(s.offRoute)..remove(msg['rider_id']),
+        stopped: Map.of(s.stopped)..remove(msg['rider_id']),
+        sweepId: s.sweepId == msg['rider_id'] ? () => null : null,
       );
     case 'ride_ended':
       return s.copyWith(ended: true);
     case 'trip_plan':
-      return s.copyWith(plan: () => TripPlan.fromJson(msg['plan']), offRoute: const {});
+      return s.copyWith(
+        plan: () => TripPlan.fromJson(msg['plan']),
+        offRoute: const {},
+        arrived: const {},
+        weather: const [],
+      );
+    case 'rider_stopped':
+      final secs = (msg['stopped_s'] as num?)?.toInt() ?? 0;
+      return s.copyWith(stopped: {
+        ...s.stopped,
+        msg['rider_id'] as String: StoppedRider(
+          since: DateTime.now().toUtc().subtract(Duration(seconds: secs)),
+          lat: (msg['lat'] as num).toDouble(),
+          lng: (msg['lng'] as num).toDouble(),
+        ),
+      });
+    case 'rider_moving':
+      return s.copyWith(stopped: Map.of(s.stopped)..remove(msg['rider_id']));
+    case 'rider_arrived':
+      return s.copyWith(arrived: {...s.arrived, msg['rider_id'] as String});
+    case 'sweep_changed':
+      return s.copyWith(sweepId: () => msg['sweep_rider_id'] as String?);
+    case 'quick_message':
+      return s.copyWith(lastQuick: () => QuickMsg(
+            riderId: msg['rider_id'] as String,
+            name: msg['name'] as String,
+            code: msg['code'] as String,
+            fromLeader: msg['role'] == 'leader',
+            at: DateTime.now().toUtc(),
+          ));
     case 'route_status':
       final id = msg['rider_id'] as String;
       final next = Map.of(s.offRoute);

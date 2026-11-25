@@ -13,8 +13,12 @@ class RideInfo {
     required this.riders,
     this.regroup,
     this.plan,
+    this.sweepId,
+    this.arrived = const {},
   });
 
+  final String? sweepId;
+  final Set<String> arrived;
   final RegroupPoint? regroup;
   final TripPlan? plan;
   final String rideId;
@@ -35,6 +39,8 @@ class RideInfo {
         ],
         regroup: RegroupPoint.fromJson(j['regroup']),
         plan: TripPlan.fromJson(j['plan']),
+        sweepId: j['sweep_rider_id'] as String?,
+        arrived: {for (final a in (j['arrived'] as List? ?? const [])) a as String},
       );
 }
 

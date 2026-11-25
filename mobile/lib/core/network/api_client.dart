@@ -17,6 +17,34 @@ class RiderAuth {
   Map<String, String> get headers => {'X-Rider-Id': riderId, 'X-Rider-Token': token};
 }
 
+/// Route/trip options for PUT /plan.
+class PlanOptions {
+  const PlanOptions({
+    this.avoidTolls = false,
+    this.avoidHighways = false,
+    this.optimizeStops = false,
+    this.alternative = 0,
+    this.departureAt,
+    this.fuelRangeKm,
+  });
+
+  final bool avoidTolls;
+  final bool avoidHighways;
+  final bool optimizeStops;
+  final int alternative;
+  final DateTime? departureAt;
+  final int? fuelRangeKm;
+
+  Map<String, dynamic> toJson() => {
+        'avoid_tolls': avoidTolls,
+        'avoid_highways': avoidHighways,
+        'optimize_stops': optimizeStops,
+        'alternative': alternative,
+        'departure_at': departureAt?.toUtc().toIso8601String(),
+        'fuel_range_km': fuelRangeKm,
+      };
+}
+
 /// One place-search hit.
 class PlaceResult {
   const PlaceResult({required this.name, required this.address, required this.lat, required this.lng});
@@ -136,7 +164,10 @@ class ApiClient {
   /// Leader only. [origin] null = server uses the leader's live position;
   /// [destination] null clears the plan.
   Future<TripPlan?> setPlan(String rideId, RiderAuth auth,
-      {TripPlace? origin, TripPlace? destination, List<TripPlace> stops = const []}) async {
+      {TripPlace? origin,
+      TripPlace? destination,
+      List<TripPlace> stops = const [],
+      PlanOptions options = const PlanOptions()}) async {
     final j = await _send(() => _dio.put(
           '/rides/$rideId/plan',
           data: {
@@ -144,10 +175,52 @@ class ApiClient {
             'origin': origin?.toJson(),
             'destination': destination?.toJson(),
             'stops': [for (final s in stops) s.toJson()],
+            ...options.toJson(),
           },
           options: Options(headers: auth.headers),
         ));
     return TripPlan.fromJson(j['plan']);
+  }
+
+  /// Leader: compare up to 3 routes before saving one.
+  Future<List<RouteOption>> previewPlan(String rideId, RiderAuth auth,
+      {TripPlace? origin,
+      required TripPlace destination,
+      List<TripPlace> stops = const [],
+      PlanOptions options = const PlanOptions()}) async {
+    final j = await _send(() => _dio.post(
+          '/rides/$rideId/plan/preview',
+          data: {
+            'rider_id': auth.riderId,
+            'origin': origin?.toJson(),
+            'destination': destination.toJson(),
+            'stops': [for (final s in stops) s.toJson()],
+            'avoid_tolls': options.avoidTolls,
+            'avoid_highways': options.avoidHighways,
+            'optimize_stops': options.optimizeStops,
+          },
+          options: Options(headers: auth.headers),
+        ));
+    return [
+      for (final o in (j['options'] as List).cast<Map<String, dynamic>>()) RouteOption.fromJson(o),
+    ];
+  }
+
+  Future<List<WeatherPoint>> getWeather(String rideId, RiderAuth auth) async {
+    final j = await _send(
+        () => _dio.get('/rides/$rideId/weather', options: Options(headers: auth.headers)));
+    return [
+      for (final p in (j['points'] as List).cast<Map<String, dynamic>>()) WeatherPoint.fromJson(p),
+    ];
+  }
+
+  /// Leader: mark the tail ("sweep") rider, or null to clear.
+  Future<void> setSweep(String rideId, RiderAuth auth, String? sweepRiderId) async {
+    await _send(() => _dio.put(
+          '/rides/$rideId/sweep',
+          data: {'rider_id': auth.riderId, 'sweep_rider_id': sweepRiderId},
+          options: Options(headers: auth.headers),
+        ));
   }
 
   /// Place search for the planner (Google via the backend; OSM fallback).

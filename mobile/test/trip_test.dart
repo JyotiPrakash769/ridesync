@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:ridesync/core/alerts/announcer.dart';
 import 'package:ridesync/core/theme/app_theme.dart';
 import 'package:ridesync/features/trip/place_search_screen.dart';
+import 'package:ridesync/features/trip/trip_assist.dart';
 import 'package:ridesync/features/trip/trip_card.dart';
 import 'package:ridesync/features/trip/trip_progress.dart';
 import 'package:ridesync/models/rider.dart';
@@ -111,14 +112,17 @@ void main() {
 
   testWidgets('trip card shows distance, time left and next stop', (tester) async {
     final plan = TripPlan.fromJson(_planJson())!;
+    final now = DateTime.utc(2026, 11, 25, 10);
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.dark(),
       home: Scaffold(
-        body: TripCard(plan: plan, progress: tripProgress(plan, 20.0 + 3000 * _m, 85.0), onTap: () {}),
+        body: TripCard(
+            plan: plan, progress: tripProgress(plan, 20.0 + 3000 * _m, 85.0), onTap: () {}, now: now),
       ),
     ));
-    expect(find.text('Puri · 7.0 km · 11 min left'), findsOneWidget);
-    expect(find.text('Next: Fuel in 2.0 km'), findsOneWidget);
+    final eta = formatClock(now.add(const Duration(seconds: 630)));
+    expect(find.text('Puri · 7.0 km · arrive ~$eta'), findsOneWidget);
+    expect(find.text('11 min left · Next: Fuel in 2.0 km'), findsOneWidget);
   });
 
   testWidgets('place search returns the chosen place', (tester) async {

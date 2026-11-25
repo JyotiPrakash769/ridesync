@@ -21,7 +21,11 @@ class Rider {
     this.lng,
     this.speedKph,
     this.lastSeenAt,
+    this.battery,
   });
+
+  /// Phone battery %, when the rider's app reports it (v0.4).
+  final int? battery;
 
   final String id;
   final String name;
@@ -43,6 +47,7 @@ class Rider {
         lng: lng,
         speedKph: speedKph,
         lastSeenAt: lastSeenAt,
+        battery: battery,
       );
   bool get hasPosition => lat != null && lng != null;
 
@@ -57,5 +62,6 @@ class Rider {
         lastSeenAt: j['last_seen_at'] == null
             ? null
             : DateTime.parse(j['last_seen_at'] as String).toUtc(),
+        battery: (j['battery'] as num?)?.toInt(),
       );
 }
