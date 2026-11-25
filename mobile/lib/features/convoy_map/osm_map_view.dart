@@ -217,10 +217,12 @@ class _OsmConvoyMapState extends State<OsmConvoyMap>
             );
           },
         ),
-        Padding(
-          padding: EdgeInsets.only(top: widget.padding.top),
+        // Required OSM credit: tucked into the strip under the floating bar
+        // instead of floating over the map.
+        SafeArea(
+          top: false,
           child: SimpleAttributionWidget(
-            alignment: Alignment.topLeft,
+            alignment: Alignment.bottomLeft,
             backgroundColor: scheme.surface.withValues(alpha: 0.7),
             source: Text(
               'OpenStreetMap contributors',

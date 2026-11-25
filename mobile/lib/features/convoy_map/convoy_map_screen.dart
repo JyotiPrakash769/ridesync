@@ -69,7 +69,8 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
     final access = await runTrackingPermissionFlow(context);
     if (!mounted) return;
     setState(() => _access = access);
-    if (access == LocationAccess.always || access == LocationAccess.foregroundOnly) {
+    if (access == LocationAccess.always ||
+        access == LocationAccess.foregroundOnly) {
       final session = ref.read(rideSessionProvider);
       if (session != null) await TrackingService.start(session.rideId);
       ref.read(convoyProvider.notifier).startGps();
@@ -97,7 +98,8 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
       await ref.read(convoyProvider.notifier).setThreshold(m);
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
       }
     }
   }
@@ -107,7 +109,8 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
       await action();
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
       }
     }
   }
@@ -159,45 +162,61 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
     final plan = convoy.plan;
     final me = convoy.riders[ref.read(rideSessionProvider)!.riderId];
     if (plan == null || me == null || !me.hasPosition) return;
-    await _guard(() => ref.read(convoyProvider.notifier).setPlanWithOptions(
-          destination: plan.destination,
-          stops: stopsAhead(plan, me.lat!, me.lng!),
-          options: PlanOptions(
-            avoidTolls: plan.avoidTolls,
-            avoidHighways: plan.avoidHighways,
-            departureAt: plan.departureAt,
-            fuelRangeKm: plan.fuelRangeKm,
+    await _guard(
+      () => ref
+          .read(convoyProvider.notifier)
+          .setPlanWithOptions(
+            destination: plan.destination,
+            stops: stopsAhead(plan, me.lat!, me.lng!),
+            options: PlanOptions(
+              avoidTolls: plan.avoidTolls,
+              avoidHighways: plan.avoidHighways,
+              departureAt: plan.departureAt,
+              fuelRangeKm: plan.fuelRangeKm,
+            ),
           ),
-        ));
+    );
   }
 
   Future<void> _sendQuick() async {
     final session = ref.read(rideSessionProvider)!;
-    final code = await showQuickMessageSheet(context, isLeader: session.isLeader);
+    final code = await showQuickMessageSheet(
+      context,
+      isLeader: session.isLeader,
+    );
     if (code == null || !mounted) return;
     final sent = ref.read(convoyProvider.notifier).sendQuick(code);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(sent ? 'Sent' : 'Not connected — try again in a moment'),
-      duration: const Duration(seconds: 2),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(sent ? 'Sent' : 'Not connected — try again in a moment'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _setRegroupAt(double lat, double lng) async {
     final label = await showRegroupDialog(context);
     if (label == null) return;
-    await _guard(() => ref.read(convoyProvider.notifier).setRegroup(lat, lng, label));
+    await _guard(
+      () => ref.read(convoyProvider.notifier).setRegroup(lat, lng, label),
+    );
   }
 
   Future<void> _regroupHere() async {
     final convoy = ref.read(convoyProvider);
     final session = ref.read(rideSessionProvider)!;
-    final me = ref.read(convoyProvider.notifier).myPosition ??
+    final me =
+        ref.read(convoyProvider.notifier).myPosition ??
         (convoy.riders[session.riderId]?.hasPosition ?? false
-            ? (lat: convoy.riders[session.riderId]!.lat!, lng: convoy.riders[session.riderId]!.lng!)
+            ? (
+                lat: convoy.riders[session.riderId]!.lat!,
+                lng: convoy.riders[session.riderId]!.lng!,
+              )
             : null);
     if (me == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Waiting for your GPS position…')));
+        const SnackBar(content: Text('Waiting for your GPS position…')),
+      );
       return;
     }
     await _setRegroupAt(me.lat, me.lng);
@@ -206,8 +225,16 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
   void _focusRegroup() {
     final p = ref.read(convoyProvider).regroup;
     if (p == null) return;
-    _map?.focus(Rider(id: 'regroup', name: '', role: RiderRole.member,
-        status: RiderStatus.online, lat: p.lat, lng: p.lng));
+    _map?.focus(
+      Rider(
+        id: 'regroup',
+        name: '',
+        role: RiderRole.member,
+        status: RiderStatus.online,
+        lat: p.lat,
+        lng: p.lng,
+      ),
+    );
   }
 
   /// Leader taps a rider: show on map or hand over leadership.
@@ -240,9 +267,11 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
             ListTile(
               minTileHeight: AppTokens.minTouch,
               leading: const Icon(Icons.shield_outlined),
-              title: Text(ref.read(convoyProvider).sweepId == r.id
-                  ? 'Remove ${r.name} as sweep'
-                  : 'Make ${r.name} the sweep (rides last)'),
+              title: Text(
+                ref.read(convoyProvider).sweepId == r.id
+                    ? 'Remove ${r.name} as sweep'
+                    : 'Make ${r.name} the sweep (rides last)',
+              ),
               onTap: () => Navigator.pop(context, 'sweep'),
             ),
           ],
@@ -252,21 +281,37 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
     if (action == 'show') _showRider(r.id);
     if (action == 'sweep') {
       final current = ref.read(convoyProvider).sweepId;
-      await _guard(() => ref.read(convoyProvider.notifier).setSweep(current == r.id ? null : r.id));
+      await _guard(
+        () => ref
+            .read(convoyProvider.notifier)
+            .setSweep(current == r.id ? null : r.id),
+      );
     }
     if (action == 'lead' && mounted) {
-      final ok = await _confirm('Make ${r.name} the leader?',
-          'They get the alerts and controls. You become a regular rider.', 'Make leader');
-      if (ok) await _guard(() => ref.read(convoyProvider.notifier).changeLeader(r.id));
+      final ok = await _confirm(
+        'Make ${r.name} the leader?',
+        'They get the alerts and controls. You become a regular rider.',
+        'Make leader',
+      );
+      if (ok) {
+        await _guard(
+          () => ref.read(convoyProvider.notifier).changeLeader(r.id),
+        );
+      }
     }
   }
 
   Future<void> _takeOver() async {
-    final ok = await _confirm('Take over as leader?',
-        'The leader has been offline for a while. You\'ll get the falling-behind alerts and '
-            'ride controls.', 'Take over');
+    final ok = await _confirm(
+      'Take over as leader?',
+      'The leader has been offline for a while. You\'ll get the falling-behind alerts and '
+          'ride controls.',
+      'Take over',
+    );
     final me = ref.read(rideSessionProvider)?.riderId;
-    if (ok && me != null) await _guard(() => ref.read(convoyProvider.notifier).changeLeader(me));
+    if (ok && me != null) {
+      await _guard(() => ref.read(convoyProvider.notifier).changeLeader(me));
+    }
   }
 
   Future<bool> _confirm(String title, String body, String action) async =>
@@ -276,25 +321,36 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
           title: Text(title),
           content: Text(body),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(action)),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(action),
+            ),
           ],
         ),
       ) ??
       false;
 
-  Future<void> _openPlanner({TripPlace? setDestination, TripPlace? addStop}) async {
+  Future<void> _openPlanner({
+    TripPlace? setDestination,
+    TripPlace? addStop,
+  }) async {
     final convoy = ref.read(convoyProvider);
     final me = convoy.riders[ref.read(rideSessionProvider)!.riderId];
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => TripPlannerScreen(
-        initial: convoy.plan,
-        nearLat: me?.lat,
-        nearLng: me?.lng,
-        setDestination: setDestination,
-        addStop: addStop,
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TripPlannerScreen(
+          initial: convoy.plan,
+          nearLat: me?.lat,
+          nearLng: me?.lng,
+          setDestination: setDestination,
+          addStop: addStop,
+        ),
       ),
-    ));
+    );
     final plan = ref.read(convoyProvider).plan;
     if (plan != null) _map?.fitPoints(plan.route);
   }
@@ -321,7 +377,8 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
           e.kind == ApiErrorKind.unauthorized) {
         await ref.read(rideSessionProvider.notifier).clear();
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -351,31 +408,42 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
         : null;
     final myOffRoute = convoy.offRoute[session.riderId];
     final spread = groupSpread(convoy.riders.values, sweepId: convoy.sweepId);
-    final showHint = session.isLeader &&
+    final showHint =
+        session.isLeader &&
         !_hintDismissed &&
-        _regroupHint.update(spread, convoy.thresholdM, DateTime.now().toUtc()) &&
+        _regroupHint.update(
+          spread,
+          convoy.thresholdM,
+          DateTime.now().toUtc(),
+        ) &&
         convoy.regroup == null;
     final stoppedOthers = {
       for (final e in convoy.stopped.entries)
-        if (e.key != session.riderId && convoy.riders[e.key] != null) e.key: e.value,
+        if (e.key != session.riderId && convoy.riders[e.key] != null)
+          e.key: e.value,
     };
     final quick = convoy.lastQuick;
-    final showQuick = quick != null &&
+    final showQuick =
+        quick != null &&
         quick.riderId != session.riderId &&
-        DateTime.now().toUtc().difference(quick.at) < const Duration(seconds: 6);
+        DateTime.now().toUtc().difference(quick.at) <
+            const Duration(seconds: 6);
     if (showQuick) {
       _quickTimer?.cancel();
       _quickTimer = Timer(const Duration(seconds: 6), () {
         if (mounted) setState(() {});
       });
     }
-    final weatherWarning = convoy.weather.where((w) => w.warning != null).firstOrNull;
+    final weatherWarning = convoy.weather
+        .where((w) => w.warning != null)
+        .firstOrNull;
     final othersOffRoute = {
       for (final e in convoy.offRoute.entries)
         if (e.key != session.riderId) e.key: e.value,
     };
     // Floating cards above the bar; camera fits keep riders clear of them.
-    final cardCount = (showHint ? 1 : 0) +
+    final cardCount =
+        (showHint ? 1 : 0) +
         (session.isLeader && stoppedOthers.isNotEmpty ? 1 : 0) +
         (convoy.regroup != null ? 1 : 0) +
         (session.isLeader && convoy.alerts.isNotEmpty ? 1 : 0) +
@@ -397,10 +465,12 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
               ),
               onLongPress: session.isLeader ? _mapMenu : null,
               showMyLocation:
-                  _access == LocationAccess.always || _access == LocationAccess.foregroundOnly,
+                  _access == LocationAccess.always ||
+                  _access == LocationAccess.foregroundOnly,
               padding: EdgeInsets.only(
                 top: padding.top + 56 + (convoy.plan != null ? 64 : 0),
-                bottom: AppTokens.minTouch +
+                bottom:
+                    AppTokens.minTouch +
                     barBottom +
                     8 +
                     (cardCount * (AppTokens.minTouch + 8 + AppTokens.gap)),
@@ -420,25 +490,32 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                 children: [
                   if (plan != null)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: AppTokens.sideMargin),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTokens.sideMargin,
+                      ),
                       child: TripCard(
                         plan: plan,
                         progress: progress,
                         onTap: () => _map?.fitPoints(plan.route),
                         onNavigate: () => navigateWithGoogleMaps(
-                            navigationTarget(plan, progress?.nextStop)),
+                          navigationTarget(plan, progress?.nextStop),
+                        ),
                         onEdit: session.isLeader ? _openPlanner : null,
                         weatherWarning: weatherWarning == null
                             ? null
                             : '${weatherWarning.warning} at '
-                                '${weatherWarning.label.isEmpty ? 'destination' : weatherWarning.label}'
-                                ' ~${formatClock(weatherWarning.eta)}',
+                                  '${weatherWarning.label.isEmpty ? 'destination' : weatherWarning.label}'
+                                  ' ~${formatClock(weatherWarning.eta)}',
                       ),
                     ),
                   if (plan != null) const SizedBox(height: 8),
-                  if (session.isLeader && spread != null && convoy.riders.length > 1) ...[
+                  if (session.isLeader &&
+                      spread != null &&
+                      convoy.riders.length > 1) ...[
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: AppTokens.sideMargin),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTokens.sideMargin,
+                      ),
                       child: LeaderAssistCard(
                         spread: spread,
                         riders: convoy.riders,
@@ -491,7 +568,9 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                   arrived: convoy.arrived,
                   stopped: convoy.stopped,
                   footer: Padding(
-                    padding: EdgeInsets.only(bottom: AppTokens.minTouch + barBottom),
+                    padding: EdgeInsets.only(
+                      bottom: AppTokens.minTouch + barBottom,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -499,7 +578,9 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                           FilledButton.icon(
                             onPressed: _openPlanner,
                             icon: const Icon(Icons.route),
-                            label: Text(plan == null ? 'Plan trip' : 'Edit trip'),
+                            label: Text(
+                              plan == null ? 'Plan trip' : 'Edit trip',
+                            ),
                           ),
                           const SizedBox(height: 12),
                           FilledButton.tonalIcon(
@@ -508,13 +589,18 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                             label: const Text('Regroup at my location'),
                           ),
                           const SizedBox(height: 4),
-                          Text('Tip: long-press the map to set a regroup point anywhere.',
-                              style: Theme.of(context).textTheme.bodySmall,
-                              textAlign: TextAlign.center),
+                          Text(
+                            'Tip: long-press the map to set a regroup point anywhere.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                            textAlign: TextAlign.center,
+                          ),
                           const SizedBox(height: 12),
                         ],
                         if (!session.isLeader &&
-                            leaderGone(convoy.leader, DateTime.now().toUtc())) ...[
+                            leaderGone(
+                              convoy.leader,
+                              DateTime.now().toUtc(),
+                            )) ...[
                           FilledButton.icon(
                             onPressed: _takeOver,
                             icon: const Icon(Icons.star),
@@ -529,9 +615,17 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                         ),
                         const SizedBox(height: 12),
                         OutlinedButton.icon(
-                          onPressed: _busy ? null : () => _confirmEnd(session.isLeader),
-                          icon: Icon(session.isLeader ? Icons.flag : Icons.logout),
-                          label: Text(session.isLeader ? 'End ride for everyone' : 'Leave ride'),
+                          onPressed: _busy
+                              ? null
+                              : () => _confirmEnd(session.isLeader),
+                          icon: Icon(
+                            session.isLeader ? Icons.flag : Icons.logout,
+                          ),
+                          label: Text(
+                            session.isLeader
+                                ? 'End ride for everyone'
+                                : 'Leave ride',
+                          ),
                         ),
                       ],
                     ),
@@ -539,98 +633,113 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
                 ),
               ),
             ),
-          Positioned(
-            left: AppTokens.sideMargin,
-            right: AppTokens.sideMargin,
-            bottom: barBottom + AppTokens.minTouch + 8 + AppTokens.gap,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (convoy.regroup != null) ...[
-                  RegroupCard(
-                    point: convoy.regroup!,
-                    myLat: convoy.riders[session.riderId]?.lat,
-                    myLng: convoy.riders[session.riderId]?.lng,
-                    onTap: _focusRegroup,
-                    onClear: session.isLeader
-                        ? () => _guard(() => ref.read(convoyProvider.notifier).clearRegroup())
-                        : null,
-                  ),
-                  const SizedBox(height: AppTokens.gap),
+          // Floating cards sit above the bar; hidden while the rider list is
+          // open so they don't cover it.
+          if (!_statusOpen)
+            Positioned(
+              left: AppTokens.sideMargin,
+              right: AppTokens.sideMargin,
+              bottom: barBottom + AppTokens.minTouch + 8 + AppTokens.gap,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (convoy.regroup != null) ...[
+                    RegroupCard(
+                      point: convoy.regroup!,
+                      myLat: convoy.riders[session.riderId]?.lat,
+                      myLng: convoy.riders[session.riderId]?.lng,
+                      onTap: _focusRegroup,
+                      onClear: session.isLeader
+                          ? () => _guard(
+                              () => ref
+                                  .read(convoyProvider.notifier)
+                                  .clearRegroup(),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: AppTokens.gap),
+                  ],
+                  if (showHint) ...[
+                    AlertCard(
+                      tone: AlertTone.tertiary,
+                      icon: Icons.groups,
+                      title:
+                          'Group spread out (${formatDistance(spread!.spreadM)})',
+                      subtitle: progress?.nextStop != null
+                          ? 'Tap to regroup at ${progress!.nextStop!.label.isEmpty ? 'the next stop' : progress.nextStop!.label}'
+                          : 'Tap to regroup at your location',
+                      onTap: () {
+                        final next = progress?.nextStop;
+                        if (next != null) {
+                          _guard(
+                            () => ref
+                                .read(convoyProvider.notifier)
+                                .setRegroup(next.lat, next.lng, next.label),
+                          );
+                        } else {
+                          _regroupHere();
+                        }
+                      },
+                      onDismiss: () => setState(() => _hintDismissed = true),
+                    ),
+                    const SizedBox(height: AppTokens.gap),
+                  ],
+                  if (session.isLeader && stoppedOthers.isNotEmpty) ...[
+                    AlertCard(
+                      icon: Icons.car_crash_outlined,
+                      title: stoppedOthers.length == 1
+                          ? '${convoy.riders[stoppedOthers.keys.single]!.name} has stopped'
+                          : '${stoppedOthers.length} riders have stopped',
+                      subtitle:
+                          'for ${formatAgo(stoppedOthers.values.first.since, DateTime.now().toUtc()).replaceAll(' ago', '')}'
+                          ' · tap to show',
+                      onTap: () => _showRider(stoppedOthers.keys.first),
+                    ),
+                    const SizedBox(height: AppTokens.gap),
+                  ],
+                  if (myOffRoute != null) ...[
+                    AlertCard(
+                      tone: AlertTone.tertiary,
+                      icon: Icons.wrong_location,
+                      title: "You're off the planned route",
+                      subtitle: session.isLeader
+                          ? '${formatDistance(myOffRoute.toDouble())} away · tap to update the route from here'
+                          : '${formatDistance(myOffRoute.toDouble())} from the route · tap to show',
+                      onTap: plan == null
+                          ? null
+                          : session.isLeader
+                          ? _rerouteFromHere
+                          : () => _map?.fitPoints(plan.route),
+                    ),
+                    const SizedBox(height: AppTokens.gap),
+                  ],
+                  if (session.isLeader && othersOffRoute.isNotEmpty) ...[
+                    AlertCard(
+                      icon: Icons.alt_route,
+                      title: othersOffRoute.length == 1
+                          ? '${convoy.riders[othersOffRoute.keys.single]?.name ?? 'A rider'} is off the route'
+                          : '${othersOffRoute.length} riders off the route',
+                      subtitle:
+                          '${formatDistance(othersOffRoute.values.reduce((a, b) => a > b ? a : b).toDouble())}'
+                          ' away · tap to show',
+                      onTap: () => _showRider(
+                        othersOffRoute.entries
+                            .reduce((a, b) => a.value >= b.value ? a : b)
+                            .key,
+                      ),
+                    ),
+                    const SizedBox(height: AppTokens.gap),
+                  ],
+                  if (session.isLeader)
+                    DistanceAlertBanner(
+                      alerts: convoy.alerts,
+                      onShowWorst: _showRider,
+                      onDismiss: () =>
+                          ref.read(convoyProvider.notifier).dismissAlerts(),
+                    ),
                 ],
-                if (showHint) ...[
-                  AlertCard(
-                    tone: AlertTone.tertiary,
-                    icon: Icons.groups,
-                    title: 'Group spread out (${formatDistance(spread!.spreadM)})',
-                    subtitle: progress?.nextStop != null
-                        ? 'Tap to regroup at ${progress!.nextStop!.label.isEmpty ? 'the next stop' : progress.nextStop!.label}'
-                        : 'Tap to regroup at your location',
-                    onTap: () {
-                      final next = progress?.nextStop;
-                      if (next != null) {
-                        _guard(() => ref
-                            .read(convoyProvider.notifier)
-                            .setRegroup(next.lat, next.lng, next.label));
-                      } else {
-                        _regroupHere();
-                      }
-                    },
-                    onDismiss: () => setState(() => _hintDismissed = true),
-                  ),
-                  const SizedBox(height: AppTokens.gap),
-                ],
-                if (session.isLeader && stoppedOthers.isNotEmpty) ...[
-                  AlertCard(
-                    icon: Icons.car_crash_outlined,
-                    title: stoppedOthers.length == 1
-                        ? '${convoy.riders[stoppedOthers.keys.single]!.name} has stopped'
-                        : '${stoppedOthers.length} riders have stopped',
-                    subtitle: 'for ${formatAgo(stoppedOthers.values.first.since, DateTime.now().toUtc()).replaceAll(' ago', '')}'
-                        ' · tap to show',
-                    onTap: () => _showRider(stoppedOthers.keys.first),
-                  ),
-                  const SizedBox(height: AppTokens.gap),
-                ],
-                if (myOffRoute != null) ...[
-                  AlertCard(
-                    tone: AlertTone.tertiary,
-                    icon: Icons.wrong_location,
-                    title: "You're off the planned route",
-                    subtitle: session.isLeader
-                        ? '${formatDistance(myOffRoute.toDouble())} away · tap to update the route from here'
-                        : '${formatDistance(myOffRoute.toDouble())} from the route · tap to show',
-                    onTap: plan == null
-                        ? null
-                        : session.isLeader
-                            ? _rerouteFromHere
-                            : () => _map?.fitPoints(plan.route),
-                  ),
-                  const SizedBox(height: AppTokens.gap),
-                ],
-                if (session.isLeader && othersOffRoute.isNotEmpty) ...[
-                  AlertCard(
-                    icon: Icons.alt_route,
-                    title: othersOffRoute.length == 1
-                        ? '${convoy.riders[othersOffRoute.keys.single]?.name ?? 'A rider'} is off the route'
-                        : '${othersOffRoute.length} riders off the route',
-                    subtitle: '${formatDistance(othersOffRoute.values.reduce((a, b) => a > b ? a : b).toDouble())}'
-                        ' away · tap to show',
-                    onTap: () => _showRider(othersOffRoute.entries
-                        .reduce((a, b) => a.value >= b.value ? a : b)
-                        .key),
-                  ),
-                  const SizedBox(height: AppTokens.gap),
-                ],
-                if (session.isLeader)
-                  DistanceAlertBanner(
-                    alerts: convoy.alerts,
-                    onShowWorst: _showRider,
-                    onDismiss: () => ref.read(convoyProvider.notifier).dismissAlerts(),
-                  ),
-              ],
+              ),
             ),
-          ),
           Positioned(
             left: AppTokens.sideMargin,
             right: AppTokens.sideMargin,
@@ -641,7 +750,10 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
               onToggleStatus: _toggleStatus,
               onRecenter: () => _recenter(convoy.riders.values),
               thresholdChip: session.isLeader
-                  ? ThresholdChip(thresholdM: convoy.thresholdM, onChanged: _setThreshold)
+                  ? ThresholdChip(
+                      thresholdM: convoy.thresholdM,
+                      onChanged: _setThreshold,
+                    )
                   : null,
               onQuickMessage: _sendQuick,
             ),
@@ -656,11 +768,16 @@ class _ConvoyMapScreenState extends ConsumerState<ConvoyMapScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(leader ? 'End the ride?' : 'Leave the ride?'),
-        content: Text(leader
-            ? 'Everyone will be disconnected and the ride code will stop working.'
-            : 'You\'ll disappear from the group map. You can rejoin with the ride code.'),
+        content: Text(
+          leader
+              ? 'Everyone will be disconnected and the ride code will stop working.'
+              : 'You\'ll disappear from the group map. You can rejoin with the ride code.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(leader ? 'End ride' : 'Leave'),
@@ -694,11 +811,11 @@ class _LocationOffChip extends StatelessWidget {
           children: [
             Icon(Icons.location_off, size: 16, color: scheme.onErrorContainer),
             const SizedBox(width: 8),
-            Text(label,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(color: scheme.onErrorContainer)),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelLarge
+                  ?.copyWith(color: scheme.onErrorContainer),
+            ),
           ],
         ),
       ),
@@ -735,7 +852,8 @@ class _RideOverViewState extends ConsumerState<_RideOverView> {
     final scheme = Theme.of(context).colorScheme;
     final message = switch (widget.code) {
       closeNotARider => 'You\'re no longer part of this ride.',
-      closeUnauthorized => 'Your ride session is no longer valid. Join the ride again.',
+      closeUnauthorized =>
+        'Your ride session is no longer valid. Join the ride again.',
       closeRideNotFound => 'This ride no longer exists.',
       _ => 'This ride has ended.',
     };
@@ -747,7 +865,11 @@ class _RideOverViewState extends ConsumerState<_RideOverView> {
             const SizedBox(height: 24),
             const Icon(Icons.flag, size: 48),
             const SizedBox(height: 16),
-            Text(message, style: text.headlineSmall, textAlign: TextAlign.center),
+            Text(
+              message,
+              style: text.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 24),
             if (_summary != null)
               FutureBuilder<RideSummary>(
@@ -773,19 +895,25 @@ class _RideOverViewState extends ConsumerState<_RideOverView> {
                             '${h > 0 ? '${h}h ' : ''}${m}min · '
                             '${s.fallingBehindTotal} falling-behind alert'
                             '${s.fallingBehindTotal == 1 ? '' : 's'}',
-                            style: text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+                            style: text.bodyMedium?.copyWith(
+                              fontFeatures: tabularFigures,
+                            ),
                           ),
                           if (s.plannedDistanceKm != null)
                             Text(
                               'Planned: ${s.plannedDistanceKm!.toStringAsFixed(1)} km'
                               '${s.destination != null && s.destination!.isNotEmpty ? ' to ${s.destination}' : ''}',
-                              style: text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+                              style: text.bodyMedium?.copyWith(
+                                fontFeatures: tabularFigures,
+                              ),
                             ),
                           const Divider(height: 24),
                           for (final r in s.riders)
                             ListTile(
                               contentPadding: EdgeInsets.zero,
-                              leading: Icon(r.isLeader ? Icons.star : Icons.two_wheeler),
+                              leading: Icon(
+                                r.isLeader ? Icons.star : Icons.two_wheeler,
+                              ),
                               title: Text(r.name),
                               subtitle: Text(
                                 [
@@ -794,7 +922,9 @@ class _RideOverViewState extends ConsumerState<_RideOverView> {
                                     'fell behind ${r.fallingBehindCount}x'
                                         '${r.maxGapM != null ? ' (max ${formatDistance(r.maxGapM!.toDouble())})' : ''}',
                                 ].join(' · '),
-                                style: text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                                style: text.bodySmall?.copyWith(
+                                  fontFeatures: tabularFigures,
+                                ),
                               ),
                             ),
                         ],
