@@ -44,7 +44,8 @@ async def test_get_ride(client, ride):
     assert body["threshold_m"] == 500
     rider = body["riders"][0]
     assert set(rider) == {
-        "rider_id", "name", "role", "lat", "lng", "speed_kph", "last_seen_at", "status"
+        "rider_id", "name", "role", "lat", "lng", "speed_kph", "last_seen_at", "status",
+        "battery",  # v0.4 additive
     }
     assert rider["status"] == "offline"  # never seen yet
 

@@ -24,10 +24,12 @@ from app.schemas.ws_messages import (
     Heartbeat,
     Leave,
     LocationUpdate,
+    QuickMessage,
     client_message_adapter,
 )
 from app.security import LIMITS, limiter, token_matches
 from app.services import ride_service as rs
+from app.services import assist_service
 from app.services.convoy_service import record_falling_behind
 from app.services.distance_service import tracker
 from app.services.positions import evaluate_alerts
@@ -72,6 +74,7 @@ async def _authorize(ride_id: str, rider_id: str, token: str) -> tuple[str, int 
 
 async def on_location(ride_id: str, rider_id: str, msg: LocationUpdate) -> None:
     route_msg = None
+    assist_msgs: list[dict] = []
     async with AsyncSessionLocal() as db:
         rider = await db.get(Rider, uuid.UUID(rider_id))
         if rider is None:
@@ -81,6 +84,18 @@ async def on_location(ride_id: str, rider_id: str, msg: LocationUpdate) -> None:
             route_msg = route_tracker.evaluate(
                 ride_id, ride.plan, rider_id, rider.display_name, msg.lat, msg.lng
             )
+            arrived = assist_service.arrival_tracker.evaluate(
+                ride_id, ride.plan, rider_id, rider.display_name, msg.lat, msg.lng
+            )
+            if arrived:
+                assist_msgs.append(arrived)
+        stopped = assist_service.stopped_tracker.evaluate(
+            ride_id, rider_id, rider.display_name, msg.lat, msg.lng, time.monotonic()
+        )
+        if stopped:
+            assist_msgs.append(stopped)
+        if msg.battery is not None:
+            rider.battery = msg.battery
         rider.last_lat = msg.lat
         rider.last_lng = msg.lng
         rider.last_speed_kph = msg.speed_kph
@@ -100,6 +115,23 @@ async def on_location(ride_id: str, rider_id: str, msg: LocationUpdate) -> None:
         await manager.broadcast(ride_id, alert)
     if route_msg is not None:
         await manager.broadcast(ride_id, route_msg)
+    for m in assist_msgs:
+        if m["type"] == "rider_arrived":
+            await assist_service.record_arrival(ride_id, m["rider_id"])
+        await manager.broadcast(ride_id, m)
+
+
+async def on_quick_message(ride_id: str, rider_id: str, msg: QuickMessage) -> None:
+    async with AsyncSessionLocal() as db:
+        rider = await db.get(Rider, uuid.UUID(rider_id))
+        if rider is None or not assist_service.quick_code_allowed(
+            msg.code, rider.role == ROLE_LEADER
+        ):
+            return
+        await manager.broadcast(ride_id, {
+            "type": "quick_message", "rider_id": rider_id, "name": rider.display_name,
+            "role": rider.role, "code": msg.code,
+        })
 
 
 async def on_heartbeat(rider_id: str) -> None:
@@ -139,6 +171,7 @@ async def ride_socket(ws: WebSocket, ride_id: str, rider_id: str = "", token: st
         return
     rider_id = str(uuid.UUID(rider_id))
     last_update = 0.0
+    last_quick = -1e9
 
     await manager.connect(ride_id, rider_id, ws)
     try:
@@ -158,6 +191,11 @@ async def ride_socket(ws: WebSocket, ride_id: str, rider_id: str = "", token: st
                     continue
                 last_update = now
                 await on_location(ride_id, rider_id, msg)
+            elif isinstance(msg, QuickMessage):
+                now = time.monotonic()
+                if now - last_quick >= assist_service.QUICK_MIN_INTERVAL_S:
+                    last_quick = now
+                    await on_quick_message(ride_id, rider_id, msg)
             elif isinstance(msg, Heartbeat):
                 await on_heartbeat(rider_id)
             elif isinstance(msg, Leave) and await on_leave(ride_id, rider_id):
@@ -174,5 +212,7 @@ async def end_ride_rooms(ride_ids: list[str]) -> None:
     for rid in ride_ids:
         tracker.reset(rid)
         route_tracker.reset(rid)
+        assist_service.stopped_tracker.reset(rid)
+        assist_service.arrival_tracker.reset(rid)
         await manager.broadcast(rid, {"type": "ride_ended"})
         await manager.close_room(rid, CLOSE_RIDE_ENDED)

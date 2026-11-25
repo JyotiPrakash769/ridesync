@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CHAR, Boolean, DateTime, Float, ForeignKey, Index, String, func, text
+from sqlalchemy import CHAR, Boolean, DateTime, Float, ForeignKey, Index, SmallInteger, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +44,8 @@ class Rider(Base):
     last_lat: Mapped[float | None] = mapped_column(Float)
     last_lng: Mapped[float | None] = mapped_column(Float)
     last_speed_kph: Mapped[float | None] = mapped_column(Float)
+    # Phone battery %, reported with location updates (leader assist).
+    battery: Mapped[int | None] = mapped_column(SmallInteger)
     # SHA-256 of the rider's secret token (app/security.py). Never the token.
     token_hash: Mapped[str | None] = mapped_column(String(64))
     # Kept because it is in the schema contract; display status is always

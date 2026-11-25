@@ -11,13 +11,21 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+from fastapi import HTTPException, status
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.event import RideEvent
 from app.services import google_maps
 from app.services import ride_service as rs
+from app.config import get_settings
+from app.services.google_maps import RouteOptions
 from app.services.route_geometry import LatLng, decode_polyline, distance_to_route_m
+
+MAX_DEPARTURE_AHEAD = timedelta(days=7)
+ARRIVED_M = 150
 
 MAX_STOPS = 5
 OFF_ROUTE_M = 250
@@ -36,27 +44,76 @@ class Place:
         return {"lat": self.lat, "lng": self.lng, "label": self.label}
 
 
+@dataclass(frozen=True)
+class PlanOptions:
+    route: RouteOptions = RouteOptions()
+    alternative: int = 0              # which of the computed routes to keep
+    departure_at: datetime | None = None
+    fuel_range_km: int | None = None
+
+
+async def _resolve_origin(db, ride, leader, origin: Place | None) -> Place:
+    if origin is not None:
+        return origin
+    if leader.last_lat is None or leader.last_lng is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "origin_required")
+    return Place(leader.last_lat, leader.last_lng, "Start")
+
+
+def _check_departure(departure_at: datetime | None) -> None:
+    if departure_at is None:
+        return
+    now = rs.utcnow()
+    if departure_at < now - timedelta(hours=1) or departure_at > now + MAX_DEPARTURE_AHEAD:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "departure_out_of_range")
+
+
+async def preview_routes(
+    db: AsyncSession, ride_id: str, rider_id: uuid.UUID, token: str | None,
+    origin: Place | None, destination: Place, stops: list[Place], opts: RouteOptions,
+) -> list[dict]:
+    """Leader only: compute route options without saving (compare before choosing)."""
+    ride = await rs.get_live_ride_or_raise(db, ride_id)
+    leader = await rs.require_leader(db, ride, rider_id, token)
+    origin = await _resolve_origin(db, ride, leader, origin)
+    routes = await google_maps.compute_routes(
+        [(origin.lat, origin.lng), *[(s.lat, s.lng) for s in stops], (destination.lat, destination.lng)],
+        opts,
+    )
+    return [
+        {"index": i, "label": r.label, "distance_m": r.distance_m, "duration_s": r.duration_s,
+         "polyline": r.polyline, "approximate": r.approximate, "stop_order": r.stop_order}
+        for i, r in enumerate(routes)
+    ]
+
+
 async def set_plan(
     db: AsyncSession, ride_id: str, rider_id: uuid.UUID, token: str | None,
     origin: Place | None, destination: Place | None, stops: list[Place],
+    options: PlanOptions = PlanOptions(),
 ) -> tuple[str, dict | None]:
     """Leader only. destination=None clears the plan. origin=None uses the
-    leader's live position."""
+    leader's live position. A departure time keeps the ride alive until
+    departure + RIDE_TTL_HOURS (planning the night before)."""
     ride = await rs.get_live_ride_or_raise(db, ride_id)
     leader = await rs.require_leader(db, ride, rider_id, token)
     if destination is None:
         ride.plan = None
         await db.commit()
         return ride.id, None
-    if origin is None:
-        if leader.last_lat is None or leader.last_lng is None:
-            from fastapi import HTTPException, status
-
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "origin_required")
-        origin = Place(leader.last_lat, leader.last_lng, "Start")
-    route = await google_maps.compute_route(
-        [(origin.lat, origin.lng), *[(s.lat, s.lng) for s in stops], (destination.lat, destination.lng)]
+    _check_departure(options.departure_at)
+    origin = await _resolve_origin(db, ride, leader, origin)
+    routes = await google_maps.compute_routes(
+        [(origin.lat, origin.lng), *[(s.lat, s.lng) for s in stops], (destination.lat, destination.lng)],
+        options.route,
     )
+    route = routes[min(options.alternative, len(routes) - 1)]
+    if route.stop_order:
+        stops = [stops[i] for i in route.stop_order]
+    if options.departure_at is not None:
+        keep_until = options.departure_at + timedelta(hours=get_settings().RIDE_TTL_HOURS)
+        if keep_until > ride.expires_at:
+            ride.expires_at = keep_until
     plan = {
         "origin": origin.json(),
         "destination": destination.json(),
@@ -67,6 +124,11 @@ async def set_plan(
         "legs": route.legs,
         "provider": route.provider,
         "approximate": route.approximate,
+        "route_label": route.label,
+        "avoid_tolls": options.route.avoid_tolls,
+        "avoid_highways": options.route.avoid_highways,
+        "departure_at": options.departure_at.isoformat() if options.departure_at else None,
+        "fuel_range_km": options.fuel_range_km,
         "updated_at": rs.utcnow().isoformat(),
     }
     ride.plan = plan

@@ -69,7 +69,7 @@ def test_position_from_a_reaches_b(tc):
             assert me["status"] == "online"
             assert me["name"] == "Asha" and me["role"] == "leader"
             assert set(me) == {"rider_id", "name", "role", "lat", "lng", "speed_kph",
-                               "last_seen_at", "status"}
+                               "last_seen_at", "status", "battery"}
 
 
 def test_disconnect_does_not_remove_or_offline_rider(tc):

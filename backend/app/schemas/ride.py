@@ -41,6 +41,8 @@ class RideOut(BaseModel):
     riders: list[RiderOut]
     regroup: dict | None = None  # {lat, lng, label, set_at} (v0.2)
     plan: dict | None = None  # trip plan (v0.3), same shape as the trip_plan message
+    sweep_rider_id: uuid.UUID | None = None  # v0.4
+    arrived: list[str] = []  # v0.4: rider ids at the plan's destination
 
 
 ALLOWED_THRESHOLDS_M = (100, 300, 500, 1000)
@@ -111,3 +113,24 @@ class SetPlanIn(BaseModel):
     origin: PlaceIn | None = None
     destination: PlaceIn | None
     stops: list[PlaceIn] = Field(default_factory=list, max_length=5)
+    avoid_tolls: bool = False
+    avoid_highways: bool = False
+    optimize_stops: bool = False
+    alternative: int = Field(default=0, ge=0, le=2)  # index from /plan/preview
+    departure_at: AwareDatetime | None = None
+    fuel_range_km: int | None = Field(default=None, ge=30, le=1000)
+
+
+class PreviewPlanIn(BaseModel):
+    rider_id: uuid.UUID
+    origin: PlaceIn | None = None
+    destination: PlaceIn
+    stops: list[PlaceIn] = Field(default_factory=list, max_length=5)
+    avoid_tolls: bool = False
+    avoid_highways: bool = False
+    optimize_stops: bool = False
+
+
+class SetSweepIn(BaseModel):
+    rider_id: uuid.UUID
+    sweep_rider_id: uuid.UUID | None

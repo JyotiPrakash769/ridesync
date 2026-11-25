@@ -45,6 +45,11 @@ class Ride(Base):
     regroup_lng: Mapped[float | None] = mapped_column(Float)
     regroup_label: Mapped[str | None] = mapped_column(String(40))
     regroup_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Tail rider who rides last ("sweep"); null = none.
+    sweep_rider_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("riders.id", use_alter=True, name="fk_sweep", ondelete="SET NULL"),
+    )
     # Trip plan (origin, destination, stops, encoded route); see trip_service.
     plan: Mapped[dict | None] = mapped_column(JSONB)
 

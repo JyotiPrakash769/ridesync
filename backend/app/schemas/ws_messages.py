@@ -22,6 +22,7 @@ class LocationUpdate(BaseModel):
     speed_kph: float | None = Field(default=None, ge=0, le=500)
     # Client clock; accepted but not trusted. last_seen_at uses server time.
     ts: datetime | None = None
+    battery: int | None = Field(default=None, ge=0, le=100)  # v0.4, optional
 
 
 class Heartbeat(BaseModel):
@@ -32,7 +33,15 @@ class Leave(BaseModel):
     type: Literal["leave"]
 
 
-ClientMessage = Annotated[LocationUpdate | Heartbeat | Leave, Field(discriminator="type")]
+class QuickMessage(BaseModel):
+    """v0.4: one-tap message to the ride ("slow_down", "stopping", ...)."""
+    type: Literal["quick_message"]
+    code: str = Field(min_length=1, max_length=24)
+
+
+ClientMessage = Annotated[
+    LocationUpdate | Heartbeat | Leave | QuickMessage, Field(discriminator="type")
+]
 client_message_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 
 # Close codes sent when a socket is refused or the ride is over (additive to §5).

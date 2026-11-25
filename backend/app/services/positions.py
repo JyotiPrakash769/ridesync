@@ -20,6 +20,7 @@ def rider_payload(rider: Rider, now: datetime | None = None) -> dict[str, Any]:
         "speed_kph": rider.last_speed_kph,
         "last_seen_at": rider.last_seen_at.isoformat() if rider.last_seen_at else None,
         "status": rs.derive_status(rider.last_seen_at, now),
+        "battery": rider.battery,
     }
 
 

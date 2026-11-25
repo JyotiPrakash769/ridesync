@@ -19,3 +19,4 @@ class RiderOut(BaseModel):
     speed_kph: float | None
     last_seen_at: datetime | None
     status: RiderStatus
+    battery: int | None = None  # v0.4

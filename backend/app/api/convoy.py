@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.schemas.ride import ChangeLeaderIn, SetRegroupIn
+from app.schemas.ride import ChangeLeaderIn, SetRegroupIn, SetSweepIn
 from app.security import rate_limit
+from app.services import assist_service
 from app.services import convoy_service as cs
 from app.services.distance_service import tracker
 from app.ws.connection_manager import manager
@@ -66,3 +67,18 @@ async def ride_summary(
     """Duration, per-rider distance and falling-behind counts. Works for ended
     rides too (until data retention deletes them)."""
     return await cs.summary(db, ride_id, x_rider_id, x_rider_token)
+
+
+@router.put("/{ride_id}/sweep", dependencies=[Depends(rate_limit("write"))])
+async def set_sweep(
+    ride_id: str,
+    body: SetSweepIn,
+    x_rider_token: str | None = TokenHeader,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Leader marks the tail ("sweep") rider, or clears it. Broadcasts `sweep_changed`."""
+    ride = await assist_service.set_sweep(db, ride_id, body.rider_id, x_rider_token,
+                                          body.sweep_rider_id)
+    sid = str(ride.sweep_rider_id) if ride.sweep_rider_id else None
+    await manager.broadcast(ride.id, {"type": "sweep_changed", "sweep_rider_id": sid})
+    return {"sweep_rider_id": sid}

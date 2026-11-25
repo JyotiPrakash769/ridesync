@@ -346,3 +346,37 @@ New server→client messages:
 `route_status` fires on transitions only: off when more than 250 m from the route, back on below
 150 m. Not evaluated for approximate plans. The summary adds `planned_distance_km` and
 `destination`.
+
+## v0.4 additions: route planner, trip planner, leader assist
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/rides/{id}/plan/preview` | `{rider_id, origin?, destination, stops, avoid_tolls, avoid_highways, optimize_stops}` (leader) | `{options:[{index,label,distance_m,duration_s,polyline,approximate,stop_order}]}` |
+| PUT | `/rides/{id}/plan` | v0.3 body + `avoid_tolls, avoid_highways, optimize_stops, alternative (0–2), departure_at, fuel_range_km` | `{plan}` |
+| GET | `/rides/{id}/weather` | — (rider auth) | `{points:[{kind, label, eta, forecast:{temp_c,rain_pct,code,summary}, warning}]}` |
+| PUT | `/rides/{id}/sweep` | `{rider_id, sweep_rider_id \| null}` (leader) | `{sweep_rider_id}` |
+
+- Google only returns alternative routes for trips without stops. `optimize_stops` uses
+  Google's waypoint optimisation (keyless: nearest-neighbour). The plan stores the options
+  plus `route_label`, `departure_at`, `fuel_range_km`.
+- **Lifecycle:** a `departure_at` (from 1 h ago up to 7 days ahead) extends `expires_at` to
+  `departure_at + RIDE_TTL_HOURS`, so a ride can be planned the night before.
+- Weather: Open-Meteo hourly forecast at each stop/destination ETA (departure or now + leg
+  durations); warnings for rain/thunder ≥60 %, ≥38 °C, fog.
+- `GET /rides/{id}` adds `sweep_rider_id` and `arrived` (rider ids at the current destination);
+  rider entries add `battery`. Migration `0006`: `riders.battery`, `rides.sweep_rider_id`.
+
+Client→server additions: `location_update.battery` (0–100, optional);
+`{"type":"quick_message","code":"…"}`. Codes: leader `slow_down, stop_next_fuel, regroup,
+lets_go, speed_up`; anyone `stopping, need_fuel, help, all_good, on_my_way`. Max one per 3 s.
+
+Server→client additions:
+```json
+{"type": "quick_message", "rider_id": "...", "name": "Ravi", "role": "member", "code": "need_fuel"}
+{"type": "rider_stopped", "rider_id": "...", "name": "Ravi", "stopped_s": 181, "lat": 0, "lng": 0}
+{"type": "rider_moving", "rider_id": "...", "name": "Ravi"}
+{"type": "rider_arrived", "rider_id": "...", "name": "Ravi"}
+{"type": "sweep_changed", "sweep_rider_id": "..." | null}
+```
+`rider_stopped` = within 40 m of the same point for 3 minutes (once); `rider_moving` when they
+leave it. `rider_arrived` = within 150 m of the plan's destination (once per plan, logged).

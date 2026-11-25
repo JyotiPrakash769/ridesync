@@ -98,64 +98,114 @@ class Route:
     legs: list[dict]
     provider: str
     approximate: bool
+    label: str = ""
+    # When stops were optimised: new order as indexes into the given stops.
+    stop_order: list[int] | None = None
+
+
+@dataclass(frozen=True)
+class RouteOptions:
+    avoid_tolls: bool = False
+    avoid_highways: bool = False
+    alternatives: bool = False  # Google only returns alternatives without stops
+    optimize_stops: bool = False
 
 
 def _waypoint(p: LatLng) -> dict:
     return {"location": {"latLng": {"latitude": p[0], "longitude": p[1]}}}
 
 
-async def compute_route(points: list[LatLng]) -> Route:
-    """points = origin, *stops, destination."""
+_FIELDS = (
+    "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,"
+    "routes.legs.distanceMeters,routes.legs.duration,routes.routeLabels,"
+    "routes.optimizedIntermediateWaypointIndex"
+)
+
+
+async def compute_routes(points: list[LatLng], opts: RouteOptions = RouteOptions()) -> list[Route]:
+    """points = origin, *stops, destination. Returns 1..3 routes, best first."""
+    stops = points[1:-1]
     if _key():
         for mode in ("TWO_WHEELER", "DRIVE"):
-            body = {
+            body: dict = {
                 "origin": _waypoint(points[0]),
                 "destination": _waypoint(points[-1]),
-                "intermediates": [_waypoint(p) for p in points[1:-1]],
+                "intermediates": [_waypoint(p) for p in stops],
                 "travelMode": mode,
                 "polylineQuality": "OVERVIEW",
                 "units": "METRIC",
                 "languageCode": "en-IN",
+                "computeAlternativeRoutes": bool(opts.alternatives and not stops),
+                "routeModifiers": {"avoidTolls": opts.avoid_tolls,
+                                   "avoidHighways": opts.avoid_highways},
             }
+            if opts.optimize_stops and len(stops) > 1:
+                body["optimizeWaypointOrder"] = True
             try:
                 r = await client().post(ROUTES_URL, json=body, headers={
-                    "X-Goog-Api-Key": _key(),
-                    "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,"
-                    "routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration",
-                })
+                    "X-Goog-Api-Key": _key(), "X-Goog-FieldMask": _FIELDS})
             except httpx.HTTPError as e:
                 raise upstream_error("routing") from e
             if r.status_code == 400 and mode == "TWO_WHEELER":
-                continue  # two-wheeler not available for this region/route: try car
+                continue  # two-wheeler not available here: try car
             if r.status_code >= 400:
                 log.warning("routes api %s: %.200s", r.status_code, r.text)
                 raise upstream_error("routing")
             routes = r.json().get("routes") or []
             if not routes:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "no_route_found")
-            rt = routes[0]
-            return Route(
-                polyline=rt["polyline"]["encodedPolyline"],
-                distance_m=int(rt.get("distanceMeters", 0)),
-                duration_s=_secs(rt.get("duration", "0s")),
-                legs=[{"distance_m": int(leg.get("distanceMeters", 0)),
-                       "duration_s": _secs(leg.get("duration", "0s"))} for leg in rt.get("legs", [])],
-                provider=f"google:{mode.lower()}",
-                approximate=False,
-            )
+            out = []
+            for i, rt in enumerate(routes[:3]):
+                order = rt.get("optimizedIntermediateWaypointIndex")
+                out.append(Route(
+                    polyline=rt["polyline"]["encodedPolyline"],
+                    distance_m=int(rt.get("distanceMeters", 0)),
+                    duration_s=_secs(rt.get("duration", "0s")),
+                    legs=[{"distance_m": int(leg.get("distanceMeters", 0)),
+                           "duration_s": _secs(leg.get("duration", "0s"))}
+                          for leg in rt.get("legs", [])],
+                    provider=f"google:{mode.lower()}",
+                    approximate=False,
+                    label="Recommended" if i == 0 else f"Alternative {i}",
+                    stop_order=order if order and order != list(range(len(stops))) else None,
+                ))
+            return out
 
+    order = None
+    if opts.optimize_stops and len(stops) > 1:
+        order = nearest_neighbour_order(points[0], stops, points[-1])
+        stops = [stops[i] for i in order]
+    pts = [points[0], *stops, points[-1]]
     legs = []
-    for a, b in zip(points, points[1:], strict=False):
+    for a, b in zip(pts, pts[1:], strict=False):
         d = length_m([a, b])
         legs.append({"distance_m": round(d), "duration_s": round(d / (APPROX_SPEED_KPH / 3.6))})
-    return Route(
-        polyline=encode_polyline(points),
+    return [Route(
+        polyline=encode_polyline(pts),
         distance_m=sum(leg["distance_m"] for leg in legs),
         duration_s=sum(leg["duration_s"] for leg in legs),
         legs=legs,
         provider="straight_line",
         approximate=True,
-    )
+        label="Straight-line estimate",
+        stop_order=order if order and order != list(range(len(order))) else None,
+    )]
+
+
+def nearest_neighbour_order(origin: LatLng, stops: list[LatLng], dest: LatLng) -> list[int]:
+    """Keyless stop optimisation: greedily visit the nearest remaining stop."""
+    left = list(range(len(stops)))
+    cur, order = origin, []
+    while left:
+        i = min(left, key=lambda k: length_m([cur, stops[k]]))
+        order.append(i)
+        left.remove(i)
+        cur = stops[i]
+    return order
+
+
+async def compute_route(points: list[LatLng], opts: RouteOptions = RouteOptions()) -> Route:
+    return (await compute_routes(points, opts))[0]
 
 
 def _secs(v: str) -> int:
